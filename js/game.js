@@ -100,7 +100,8 @@
   }
 
   function drawImg(path, x, y, w, h, opts = {}) {
-    const img = images.get(path);
+    // Art manager overrides take priority over file-based images
+    const img = (window.KQ_ART && KQ_ART.getOverride(path)) || images.get(path);
     if (!img || !img.complete || !img.naturalWidth) return false;
     ctx.save();
     if (opts.flip) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); }
@@ -1246,18 +1247,30 @@
   function _showMenuPanel()    { _hideAllPanels(); document.getElementById('menuPanel').style.display = 'flex'; }
   function _showSettingsPanel(){ _hideAllPanels(); document.getElementById('settingsPanel').style.display = 'flex'; }
   function _showEditorPanel()  { _hideAllPanels(); document.getElementById('editorPanel').style.display = 'flex'; }
+  function _showArtPanel()     { _hideAllPanels(); document.getElementById('artPanel').style.display = 'flex'; }
   function _hideAllPanels() {
-    ['menuPanel','settingsPanel','editorPanel'].forEach(id => {
+    ['menuPanel','settingsPanel','editorPanel','artPanel'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
   }
 
   function _initMenuEvents() {
+    // ── Art panel back ─────────────────────────────────────
+    const artBackBtn = document.getElementById('btn-art-back');
+    if (artBackBtn) artBackBtn.addEventListener('click', () => { beep('menu'); _showMenuPanel(); });
+
+    // Build art manager UI
+    const artContainer = document.getElementById('art-slots-container');
+    if (artContainer && window.KQ_ART) KQ_ART.buildUI(artContainer);
+
+    // Art button
+    const btnArt = document.getElementById('btn-art');
+    if (btnArt) btnArt.addEventListener('click', () => { beep('menu'); _showArtPanel(); });
+
     // ── Main menu ──────────────────────────────────────────
     document.getElementById('btn-play').addEventListener('click', () => {
       ensureAudio(); beep('menu');
-      // Go to level select
       mode = 'levelselect';
       _hideAllPanels();
     });
@@ -1379,8 +1392,8 @@
     try {
       // Collect all JS and CSS source files as text
       const filesToFetch = [
-        'js/settings.js', 'js/gamepad.js', 'js/assets.js',
-        'js/levels.js', 'js/editor.js', 'js/game.js', 'style.css'
+        'js/settings.js', 'js/gamepad.js', 'js/artmanager.js',
+        'js/assets.js', 'js/levels.js', 'js/editor.js', 'js/game.js', 'style.css'
       ];
       const fetched = {};
       for (const f of filesToFetch) {

@@ -3,66 +3,131 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"/>
-  <title>Placeholder Game – Kid Quest Kit</title>
+  <title>Placeholder Game</title>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
   <main id="gameShell">
 
-    <!-- Game canvas (always present, drawn on every frame) -->
+    <!-- Game canvas -->
     <canvas id="game" width="960" height="540" aria-label="Platformer Game"></canvas>
 
-    <!-- Gamepad toast notification -->
+    <!-- Gamepad toast -->
     <div id="gpToast"></div>
 
-    <!-- ── MAIN MENU ──────────────────────────────────────── -->
-    <section id="menuPanel">
-      <div class="menu-card">
-        <div class="menu-title">Placeholder Game</div>
-        <p class="menu-sub">Replace <code>assets/art/title-logo.png</code> to change the title!</p>
+    <!-- ══════════════════════════════════════════════════════
+         MAIN MENU  —  big, friendly, kid-first
+    ══════════════════════════════════════════════════════ -->
+    <section id="menuPanel" class="overlay-panel">
+      <div class="big-menu">
 
-        <button class="menu-btn menu-btn-primary" id="btn-play">▶ Play Game</button>
-        <button class="menu-btn" id="btn-editor">🗺 Level Editor</button>
-        <button class="menu-btn" id="btn-settings">⚙ Settings &amp; Modifiers</button>
-        <button class="menu-btn" id="btn-howtoplay">❓ How to Play</button>
-        <button class="menu-btn" id="btn-export">📦 Export My Game</button>
-      </div>
-    </section>
-
-    <!-- ── SETTINGS PANEL ────────────────────────────────── -->
-    <section id="settingsPanel" style="display:none">
-      <div class="menu-card settings-card">
-        <div class="menu-title" style="font-size:28px">⚙ Settings &amp; Modifiers</div>
-        <p class="menu-sub">Tweak the game feel — move the sliders and see what happens!</p>
-        <div id="settings-sliders"></div>
-        <div style="display:flex;gap:12px;margin-top:18px;flex-wrap:wrap">
-          <button class="menu-btn" id="btn-settings-reset">🔄 Reset to Defaults</button>
-          <button class="menu-btn menu-btn-primary" id="btn-settings-back">← Back to Menu</button>
+        <div class="game-title-area">
+          <img src="assets/art/title-logo.png" alt="Game Title" class="title-logo-img"
+               onerror="this.style.display='none'; document.getElementById('title-text').style.display='block'"/>
+          <div id="title-text" class="title-text-fallback" style="display:none">Placeholder Game</div>
         </div>
+
+        <!-- The three main things a kid would want to do -->
+        <div class="big-button-row">
+
+          <button class="kid-btn kid-btn-play" id="btn-play">
+            <span class="kid-btn-icon">▶️</span>
+            <span class="kid-btn-label">PLAY!</span>
+            <span class="kid-btn-sub">Start the game</span>
+          </button>
+
+          <button class="kid-btn kid-btn-art" id="btn-art">
+            <span class="kid-btn-icon">🎨</span>
+            <span class="kid-btn-label">MY ART</span>
+            <span class="kid-btn-sub">Put your pictures in!</span>
+          </button>
+
+          <button class="kid-btn kid-btn-level" id="btn-editor">
+            <span class="kid-btn-icon">🗺️</span>
+            <span class="kid-btn-label">MY LEVELS</span>
+            <span class="kid-btn-sub">Build your world</span>
+          </button>
+
+        </div>
+
+        <!-- Advanced stuff — smaller, out of the way -->
+        <div class="advanced-row">
+          <button class="small-btn" id="btn-howtoplay">❓ How to Play</button>
+          <button class="small-btn" id="btn-settings">⚙️ Settings</button>
+          <button class="small-btn" id="btn-export">📦 Share My Game</button>
+        </div>
+
       </div>
     </section>
 
-    <!-- ── LEVEL EDITOR PANEL ─────────────────────────────── -->
-    <section id="editorPanel" style="display:none">
-      <!-- The canvas is used directly for the editor viewport.   -->
-      <!-- This div holds the editor's HTML side-panel controls.  -->
+    <!-- ══════════════════════════════════════════════════════
+         ART MANAGER  —  click a slot, pick your drawing
+    ══════════════════════════════════════════════════════ -->
+    <section id="artPanel" class="overlay-panel" style="display:none">
+      <div class="art-manager-shell">
+
+        <div class="panel-header">
+          <button class="back-btn" id="btn-art-back">← Back</button>
+          <h2 class="panel-title">🎨 Put Your Own Pictures In!</h2>
+          <p class="panel-hint">Click any box below, then pick a picture from your computer.
+            It shows up in the game right away! ✨</p>
+        </div>
+
+        <div id="art-slots-container" class="art-slots-container"></div>
+
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════
+         SETTINGS  —  advanced modifiers, for older kids/parents
+    ══════════════════════════════════════════════════════ -->
+    <section id="settingsPanel" class="overlay-panel" style="display:none">
+      <div class="menu-card settings-card">
+
+        <div class="panel-header">
+          <button class="back-btn" id="btn-settings-back">← Back</button>
+          <h2 class="panel-title">⚙️ Game Settings</h2>
+          <p class="panel-hint">Move the sliders to change how the game feels.
+            Try making gravity really low for moon jumping! 🌙</p>
+        </div>
+
+        <div id="settings-sliders"></div>
+
+        <button class="small-btn" id="btn-settings-reset" style="margin-top:12px">
+          🔄 Put Everything Back to Normal
+        </button>
+
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════
+         LEVEL EDITOR PANEL  —  side panel only, canvas is the editor
+    ══════════════════════════════════════════════════════ -->
+    <section id="editorPanel" class="overlay-panel" style="display:none">
       <div id="editorSidePanel"></div>
     </section>
 
-    <!-- ── TOUCH / GAMEPAD CONTROLS ──────────────────────── -->
+    <!-- ══════════════════════════════════════════════════════
+         TOUCH CONTROLS
+    ══════════════════════════════════════════════════════ -->
     <nav id="touchControls" aria-label="Touch controls">
-      <button data-touch="left" aria-label="Move left">◀</button>
-      <button data-touch="right" aria-label="Move right">▶</button>
-      <button data-touch="jump" aria-label="Jump">A</button>
-      <button data-touch="shoot" aria-label="Shoot">B</button>
-      <button data-touch="dash" aria-label="Dash">Dash</button>
+      <div class="touch-left">
+        <button data-touch="left" aria-label="Move left">◀</button>
+        <button data-touch="right" aria-label="Move right">▶</button>
+      </div>
+      <div class="touch-right">
+        <button data-touch="jump"  aria-label="Jump"  class="touch-a">A</button>
+        <button data-touch="shoot" aria-label="Shoot" class="touch-b">B</button>
+        <button data-touch="dash"  aria-label="Dash"  class="touch-dash">💨</button>
+      </div>
     </nav>
 
-  </main>
+  </main><!-- #gameShell -->
 
-  <!-- Scripts load in dependency order -->
+  <!-- Scripts (order matters) -->
   <script src="js/settings.js"></script>
   <script src="js/gamepad.js"></script>
+  <script src="js/artmanager.js"></script>
   <script src="js/assets.js"></script>
   <script src="js/levels.js"></script>
   <script src="js/editor.js"></script>
