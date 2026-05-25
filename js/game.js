@@ -40,6 +40,16 @@
   // Settings panel state
   let settingsSliders = {};
 
+  // Level select state
+  let highestUnlocked = 0;
+  try { highestUnlocked = parseInt(localStorage.getItem('kq_highest_unlocked') || '0', 10) || 0; } catch(e) {}
+
+  // Pause menu hover state
+  let pauseHover = -1; // -1 = none, 0 = resume, 1 = restart, 2 = menu
+
+  // Block bounce animations: Map of "tx,ty" -> { timer, maxTimer }
+  const blockAnims = new Map();
+
   const game = {
     time: 0, score: 0, coins: 0, lives: 3,
     particles: [], popups: [], projectiles: [],
@@ -49,6 +59,7 @@
   const player = makePlayer();
 
   let coins = [], powerups = [], enemies = [], map = [];
+  let movingPlatforms = [];
   let currentLevel = null;
 
   // ── Helpers ────────────────────────────────────────────────
@@ -62,7 +73,8 @@
       invincible: 0, hurtTimer: 0,
       power: { blaster: false, shield: 0, doubleJump: false, dash: false, giant: false },
       shootCooldown: 0, anim: 0,
-      _jumpHeld: false, _dashHeld: false, _shootHeld: false
+      _jumpHeld: false, _dashHeld: false, _shootHeld: false,
+      _ridingPlatform: null
     };
   }
 
@@ -181,9 +193,21 @@
     button.addEventListener("pointerleave",  up, { passive: false });
   });
 
-  canvas.addEventListener("pointerdown", () => {
+  canvas.addEventListener("pointerdown", (e) => {
     ensureAudio();
+    if (mode === "paused") {
+      _handlePauseClick(e);
+      return;
+    }
+    if (mode === "levelselect") {
+      _handleLevelSelectClick(e);
+      return;
+    }
     if (mode !== "playing" && mode !== "editor") handleStart();
+  });
+
+  canvas.addEventListener("pointermove", (e) => {
+    if (mode === "paused") _handlePauseHover(e);
   });
 
   // Gamepad init
@@ -200,12 +224,18 @@
   });
 
   function handleStart() {
-    if (mode === "menu" || mode === "gameover" || mode === "win") {
+    if (mode === "menu") {
+      // Go to level select instead of directly playing
+      mode = "levelselect";
+      _hideAllPanels();
+      return;
+    }
+    if (mode === "gameover" || mode === "win") {
       resetLevel(true); mode = "playing";
     }
   }
   function handlePause() {
-    if (mode === "playing") mode = "paused";
+    if (mode === "playing") { mode = "paused"; pauseHover = -1; }
     else if (mode === "paused") mode = "playing";
   }
 
@@ -218,9 +248,25 @@
     map     = currentLevel.map.map(row => row.split(""));
     coins   = currentLevel.coins.map(c => ({ ...c, w: 26, h: 26, taken: false, bob: Math.random() * 6 }));
     powerups= currentLevel.powerups.map(p => ({ ...p, w: 32, h: 32, taken: false, bob: Math.random() * 6 }));
-    enemies = currentLevel.enemies.map(e => ({
-      ...e, w: 40, h: 34, vx: -G_ENEMY(), alive: true,
-      startX: e.x, y: e.y - 34, hurt: 0
+
+    enemies = currentLevel.enemies.map(e => {
+      if (e.type === 'jumper') {
+        return { ...e, w: 38, h: 38, vx: 0, vy: 0, alive: true,
+          startX: e.x, y: e.y - 38, hurt: 0, jumpTimer: 1.5 + Math.random() };
+      } else if (e.type === 'flyer') {
+        return { ...e, w: 36, h: 32, vx: -G_ENEMY(), vy: 0, alive: true,
+          startX: e.x, startY: e.y, y: e.y, hurt: 0 };
+      } else {
+        return { ...e, w: 40, h: 34, vx: -G_ENEMY(), alive: true,
+          startX: e.x, y: e.y - 34, hurt: 0 };
+      }
+    });
+
+    // Moving platforms — deep copy with runtime state
+    movingPlatforms = (currentLevel.movingPlatforms || []).map(p => ({
+      ...p,
+      ox: p.x, oy: p.y,   // origin
+      t: 0                  // phase timer
     }));
 
     game.particles.length = 0;
@@ -229,6 +275,7 @@
     game.worldWidth  = currentLevel.width  * currentLevel.tileSize;
     game.worldHeight = currentLevel.height * currentLevel.tileSize;
     cameraX = 0; screenShake = 0;
+    blockAnims.clear();
 
     Object.assign(player, makePlayer());
     player.x = currentLevel.playerStart.x;
@@ -319,6 +366,9 @@
       spawnPopup(tx * TILE + 10, ty * TILE - 10, "+100");
       spawnParticles(tx * TILE + TILE/2, ty * TILE + TILE/2, "#fbbf24", 10);
       beep("coin");
+      // Bounce animation
+      const key = tx + ',' + ty;
+      blockAnims.set(key, { timer: 0.3, maxTimer: 0.3 });
     }
     if (ch === "B" && player.power.giant) {
       setTile(tx, ty, ".");
@@ -360,6 +410,12 @@
     beep("win");
     spawnPopup(player.x, player.y - 30, "Level Clear!");
     spawnParticles(player.x + player.w/2, player.y + player.h/2, "#facc15", 60);
+
+    // Update highest unlocked
+    if (levelIndex >= highestUnlocked) {
+      highestUnlocked = levelIndex + 1;
+      try { localStorage.setItem('kq_highest_unlocked', String(highestUnlocked)); } catch(e) {}
+    }
 
     // Check for next level
     const next = levelIndex + 1;
@@ -495,6 +551,31 @@
     collideEntity(player, dt);
     player.x = Math.max(0, Math.min(game.worldWidth - player.w, player.x));
 
+    // Moving platform riding
+    player._ridingPlatform = null;
+    for (const mp of movingPlatforms) {
+      const snapThresh = 8;
+      const playerBottom = player.y + player.h;
+      const onTop = playerBottom >= mp.y - snapThresh && playerBottom <= mp.y + snapThresh + 4 &&
+                    player.x + player.w > mp.x && player.x < mp.x + mp.w &&
+                    player.vy >= 0;
+      if (onTop) {
+        player.y = mp.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+        player.coyote = COYOTE_TIME;
+        player.usedDoubleJump = false;
+        player.dashReady = true;
+        player._ridingPlatform = mp;
+      }
+    }
+    // If riding, carry horizontal/vertical movement
+    if (player._ridingPlatform) {
+      const mp = player._ridingPlatform;
+      if (mp.axis === 'x') player.x += mp._vx * dt;
+      else                  player.y += mp._vy * dt;
+    }
+
     for (const c of coins) {
       if (!c.taken && rectsOverlap(player, c)) {
         c.taken = true; game.coins++; game.score += 50;
@@ -522,12 +603,71 @@
   function updateEnemies(dt) {
     for (const e of enemies) {
       if (!e.alive) continue;
-      e.x += e.vx * dt;
-      if (Math.abs(e.x - e.startX) > e.patrol) e.vx *= -1;
-      const fX = e.vx > 0 ? e.x + e.w + 4 : e.x - 4;
-      const head = worldToTile(fX, e.y + 8);
-      const foot = worldToTile(fX, e.y + e.h + 8);
-      if (isSolid(tileAt(head.tx, head.ty)) || !isSolid(tileAt(foot.tx, foot.ty))) e.vx *= -1;
+
+      if (e.type === 'jumper') {
+        // Apply gravity
+        e.vy = (e.vy || 0) + G_GRAV() * dt;
+        e.y += e.vy * dt;
+        // Ground collision via tiles
+        const ty = Math.floor((e.y + e.h) / TILE);
+        const tx = Math.floor((e.x + e.w / 2) / TILE);
+        if (isSolid(tileAt(tx, ty))) {
+          e.y = ty * TILE - e.h;
+          e.vy = 0;
+          e.onGround = true;
+        } else {
+          e.onGround = false;
+        }
+        // Also check moving platforms
+        for (const mp of movingPlatforms) {
+          const bottom = e.y + e.h;
+          if (bottom >= mp.y - 4 && bottom <= mp.y + 8 &&
+              e.x + e.w > mp.x && e.x < mp.x + mp.w && e.vy >= 0) {
+            e.y = mp.y - e.h; e.vy = 0; e.onGround = true;
+          }
+        }
+        // Small patrol sway
+        e.x += (e.vx || 0) * dt;
+        if (Math.abs(e.x - e.startX) > (e.patrol || 20)) e.vx = -(e.vx || 0) || G_ENEMY() * 0.3;
+        if (!e.vx) e.vx = -G_ENEMY() * 0.3;
+        // Jump toward player every ~2s
+        e.jumpTimer = (e.jumpTimer || 2) - dt;
+        if (e.jumpTimer <= 0 && e.onGround) {
+          e.vy = -G_JUMP() * 0.8;
+          e.jumpTimer = 1.8 + Math.random() * 0.8;
+        }
+      } else if (e.type === 'flyer') {
+        // No gravity — patrol horizontally at spawn height
+        e.x += e.vx * dt;
+        e.y = e.startY;   // maintain spawn height
+        if (Math.abs(e.x - e.startX) > e.patrol) e.vx *= -1;
+        // Gentle bob
+        e.y = e.startY + Math.sin(game.time * 2.5 + e.startX * 0.01) * 8;
+      } else {
+        // walker
+        e.x += e.vx * dt;
+        if (Math.abs(e.x - e.startX) > e.patrol) e.vx *= -1;
+        const fX = e.vx > 0 ? e.x + e.w + 4 : e.x - 4;
+        const head = worldToTile(fX, e.y + 8);
+        const foot = worldToTile(fX, e.y + e.h + 8);
+        if (isSolid(tileAt(head.tx, head.ty)) || !isSolid(tileAt(foot.tx, foot.ty))) e.vx *= -1;
+      }
+    }
+  }
+
+  function updateMovingPlatforms(dt) {
+    for (const mp of movingPlatforms) {
+      mp.t += dt;
+      const prev = mp.axis === 'x' ? mp.x : mp.y;
+      if (mp.axis === 'x') {
+        mp.x = mp.ox + Math.sin(mp.t * mp.speed / mp.range) * mp.range;
+        mp._vx = (mp.x - prev) / dt;
+        mp._vy = 0;
+      } else {
+        mp.y = mp.oy + Math.sin(mp.t * mp.speed / mp.range) * mp.range;
+        mp._vy = (mp.y - prev) / dt;
+        mp._vx = 0;
+      }
     }
   }
 
@@ -565,6 +705,12 @@
     game.particles = game.particles.filter(p => p.life > 0);
     for (const pop of game.popups) { pop.y -= 42 * dt; pop.life -= dt; }
     game.popups = game.popups.filter(p => p.life > 0);
+
+    // Block bounce anims
+    for (const [key, anim] of blockAnims) {
+      anim.timer -= dt;
+      if (anim.timer <= 0) blockAnims.delete(key);
+    }
   }
 
   function updateCamera(dt) {
@@ -605,8 +751,21 @@
     ctx.arc(x+63*s, y, 25*s, 0, Math.PI*2); ctx.rect(x-2*s, y, 70*s, 22*s); ctx.fill();
   }
 
-  function drawTile(ch, x, y) {
+  function drawTile(ch, x, y, tx, ty) {
     if (currentLevel && currentLevel.hideTiles && ch !== "S" && ch !== "F") return;
+
+    // Block bounce animation offset
+    let bounceOff = 0;
+    if (tx !== undefined && ty !== undefined) {
+      const key = tx + ',' + ty;
+      const anim = blockAnims.get(key);
+      if (anim) {
+        const t = 1 - anim.timer / anim.maxTimer; // 0..1
+        bounceOff = -Math.sin(t * Math.PI) * 8;
+      }
+    }
+    y += bounceOff;
+
     const a = (window.KQ_ASSETS || {}).tiles || {};
     let path = null;
     if (ch === "X") path = a.ground;
@@ -642,8 +801,16 @@
     for (let ty = 0; ty < map.length; ty++)
       for (let tx = startCol; tx <= endCol; tx++) {
         const ch = tileAt(tx, ty);
-        if (ch !== ".") drawTile(ch, tx * TILE, ty * TILE);
+        if (ch !== ".") drawTile(ch, tx * TILE, ty * TILE, tx, ty);
       }
+
+    // Moving platforms
+    for (const mp of movingPlatforms) {
+      ctx.fillStyle = "#4ade80";
+      ctx.fillRect(mp.x, mp.y, mp.w, mp.h);
+      ctx.fillStyle = "#16a34a";
+      ctx.fillRect(mp.x, mp.y, mp.w, 5);
+    }
 
     // Debug hitboxes
     if (KQ_SETTINGS.get('showHitboxes')) {
@@ -662,9 +829,19 @@
     for (const c of coins) {
       if (c.taken) continue;
       const bob = Math.sin(game.time * 4 + c.bob) * 5;
+      // Spinning coin: x-radius oscillates to fake spin
+      const spinRx = Math.abs(Math.cos(game.time * 6 + c.bob)) * (c.w / 2);
       if (!drawImg((ASSETS.items||{}).coin, c.x, c.y + bob, c.w, c.h)) {
         ctx.fillStyle = "#facc15"; ctx.beginPath();
-        ctx.ellipse(c.x+c.w/2, c.y+bob+c.h/2, c.w/2, c.h/2, game.time*4, 0, Math.PI*2); ctx.fill();
+        ctx.ellipse(c.x + c.w/2, c.y + bob + c.h/2, Math.max(1, spinRx), c.h/2, 0, 0, Math.PI*2);
+        ctx.fill();
+        // Shine on coin
+        if (spinRx > c.w * 0.2) {
+          ctx.fillStyle = "rgba(255,255,255,0.45)";
+          ctx.beginPath();
+          ctx.ellipse(c.x + c.w/2 - spinRx*0.3, c.y + bob + c.h/2 - 3, Math.max(1, spinRx*0.3), c.h*0.2, 0, 0, Math.PI*2);
+          ctx.fill();
+        }
       }
     }
     for (const p of powerups) {
@@ -682,10 +859,29 @@
     for (const e of enemies) {
       if (!e.alive) continue;
       const flip = e.vx > 0;
-      if (!drawImg((ASSETS.enemies||{}).walker, e.x, e.y, e.w, e.h, { flip })) {
-        ctx.fillStyle = "#fb923c"; ctx.fillRect(e.x, e.y, e.w, e.h);
-        ctx.fillStyle = "#111827";
-        ctx.fillRect(e.x + (flip ? 25 : 9), e.y + 10, 6, 6);
+      if (e.type === 'jumper') {
+        if (!drawImg((ASSETS.enemies||{}).jumper, e.x, e.y, e.w, e.h, { flip })) {
+          ctx.fillStyle = '#f97316'; ctx.fillRect(e.x, e.y, e.w, e.h);
+          ctx.fillStyle = '#111827';
+          ctx.fillRect(e.x + (flip ? 22 : 8), e.y + 10, 6, 6);
+        }
+      } else if (e.type === 'flyer') {
+        if (!drawImg((ASSETS.enemies||{}).flyer, e.x, e.y, e.w, e.h, { flip })) {
+          ctx.fillStyle = '#c084fc'; ctx.fillRect(e.x, e.y, e.w, e.h);
+          ctx.fillStyle = '#111827';
+          ctx.fillRect(e.x + (flip ? 20 : 8), e.y + 8, 6, 6);
+          // Wings
+          ctx.fillStyle = 'rgba(192,132,252,0.5)';
+          const wingFlap = Math.sin(game.time * 10) * 6;
+          ctx.fillRect(e.x - 10, e.y + wingFlap, 10, 16);
+          ctx.fillRect(e.x + e.w, e.y + wingFlap, 10, 16);
+        }
+      } else {
+        if (!drawImg((ASSETS.enemies||{}).walker, e.x, e.y, e.w, e.h, { flip })) {
+          ctx.fillStyle = "#fb923c"; ctx.fillRect(e.x, e.y, e.w, e.h);
+          ctx.fillStyle = "#111827";
+          ctx.fillRect(e.x + (flip ? 25 : 9), e.y + 10, 6, 6);
+        }
       }
     }
   }
@@ -746,6 +942,24 @@
     ctx.globalAlpha = 1; ctx.textAlign = "left";
   }
 
+  function _drawHeart(x, y, size, filled) {
+    ctx.save();
+    ctx.beginPath();
+    const s = size / 2;
+    ctx.moveTo(x + s, y + size * 0.3);
+    ctx.bezierCurveTo(x + s, y, x + size * 1.1, y, x + size * 1.1, y + size * 0.4);
+    ctx.bezierCurveTo(x + size * 1.1, y + size * 0.75, x + s, y + size, x + s, y + size);
+    ctx.bezierCurveTo(x + s, y + size, x - size * 0.1, y + size * 0.75, x - size * 0.1, y + size * 0.4);
+    ctx.bezierCurveTo(x - size * 0.1, y, x + s, y, x + s, y + size * 0.3);
+    ctx.closePath();
+    ctx.fillStyle = filled ? "#ef4444" : "#374151";
+    ctx.fill();
+    if (!filled) {
+      ctx.strokeStyle = "#6b7280"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function drawHud() {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "rgba(15,23,42,.72)";
@@ -753,9 +967,25 @@
     ctx.fillStyle = "#f8fafc"; ctx.font = "bold 18px system-ui, sans-serif";
     ctx.fillText(`Score ${game.score}`, 32, 44);
     ctx.fillText(`Coins ${game.coins}`, 162, 44);
-    ctx.fillText(`Lives ${KQ_SETTINGS.get('infiniteLives') ? '∞' : game.lives}`, 276, 44);
+
+    // Hearts HUD instead of "Lives N"
+    const livesVal = KQ_SETTINGS.get('infiniteLives') ? 99 : game.lives;
+    if (livesVal > 5) {
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillText(`♥ ${livesVal}`, 276, 44);
+    } else {
+      const maxDisplay = 5;
+      const hSize = 14;
+      const hGap  = 18;
+      const hStartX = 276;
+      const hY = 26;
+      for (let i = 0; i < maxDisplay; i++) {
+        _drawHeart(hStartX + i * hGap, hY, hSize, i < livesVal);
+      }
+    }
+
     const lv = currentLevel ? currentLevel.name : '';
-    ctx.fillStyle = "#94a3b8"; ctx.font = "14px system-ui"; ctx.fillText(lv, 360, 44);
+    ctx.fillStyle = "#94a3b8"; ctx.font = "14px system-ui"; ctx.fillText(lv, 390, 44);
     const pows = [];
     if (player.power.blaster)    pows.push("🔫");
     if (player.power.shield)     pows.push("🛡");
@@ -798,11 +1028,165 @@
     ctx.restore();
   }
 
+  // ── Pause menu (card with buttons) ────────────────────────
+  const PAUSE_BTNS = [
+    { label: "▶ Resume",        action: () => { mode = "playing"; } },
+    { label: "🔄 Restart Level", action: () => { resetLevel(true); mode = "playing"; } },
+    { label: "🏠 Main Menu",    action: () => { mode = "menu"; _showMenuPanel(); } },
+  ];
+  const PAUSE_CARD = { x: 330, y: 160, w: 300, h: 220 };
+  const PAUSE_BTN_H = 48;
+  const PAUSE_BTN_GAP = 12;
+
+  function _pauseBtnRect(i) {
+    return {
+      x: PAUSE_CARD.x + 20,
+      y: PAUSE_CARD.y + 60 + i * (PAUSE_BTN_H + PAUSE_BTN_GAP),
+      w: PAUSE_CARD.w - 40,
+      h: PAUSE_BTN_H
+    };
+  }
+
+  function _handlePauseHover(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (VIEW_W / rect.width);
+    const my = (e.clientY - rect.top) * (VIEW_H / rect.height);
+    pauseHover = -1;
+    for (let i = 0; i < PAUSE_BTNS.length; i++) {
+      const r = _pauseBtnRect(i);
+      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        pauseHover = i; break;
+      }
+    }
+  }
+
+  function _handlePauseClick(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (VIEW_W / rect.width);
+    const my = (e.clientY - rect.top) * (VIEW_H / rect.height);
+    for (let i = 0; i < PAUSE_BTNS.length; i++) {
+      const r = _pauseBtnRect(i);
+      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        PAUSE_BTNS[i].action(); return;
+      }
+    }
+  }
+
+  function drawPauseMenu() {
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "rgba(2,6,23,.55)"; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    // Card
+    ctx.fillStyle = "rgba(15,23,42,.95)";
+    _roundRect(PAUSE_CARD.x, PAUSE_CARD.y, PAUSE_CARD.w, PAUSE_CARD.h, 20);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.18)"; ctx.lineWidth = 2; ctx.stroke();
+
+    ctx.fillStyle = "#fbbf24"; ctx.font = "bold 26px system-ui"; ctx.textAlign = "center";
+    ctx.fillText("Paused", PAUSE_CARD.x + PAUSE_CARD.w / 2, PAUSE_CARD.y + 42);
+
+    for (let i = 0; i < PAUSE_BTNS.length; i++) {
+      const r = _pauseBtnRect(i);
+      const hovered = pauseHover === i;
+      ctx.fillStyle = hovered ? "#fbbf24" : "rgba(255,255,255,0.08)";
+      _roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
+      ctx.fillStyle = hovered ? "#111827" : "#f1f5f9";
+      ctx.font = "bold 17px system-ui"; ctx.textAlign = "center";
+      ctx.fillText(PAUSE_BTNS[i].label, r.x + r.w / 2, r.y + r.h * 0.64);
+    }
+    ctx.restore();
+  }
+
+  // ── Level select screen ────────────────────────────────────
+  const LS_COLS   = 3;
+  const LS_CARD_W = 240;
+  const LS_CARD_H = 110;
+  const LS_GAP    = 28;
+  const LS_START_X = 60;
+  const LS_START_Y = 120;
+
+  function _lsCardRect(i) {
+    const col = i % LS_COLS;
+    const row = Math.floor(i / LS_COLS);
+    return {
+      x: LS_START_X + col * (LS_CARD_W + LS_GAP),
+      y: LS_START_Y + row * (LS_CARD_H + LS_GAP),
+      w: LS_CARD_W, h: LS_CARD_H
+    };
+  }
+
+  function _handleLevelSelectClick(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (VIEW_W / rect.width);
+    const my = (e.clientY - rect.top) * (VIEW_H / rect.height);
+
+    // Back button (top-left)
+    if (mx >= 20 && mx <= 110 && my >= 20 && my <= 55) {
+      mode = "menu"; _showMenuPanel(); return;
+    }
+
+    const LEVELS = window.KQ_LEVELS || [];
+    for (let i = 0; i < LEVELS.length; i++) {
+      const r = _lsCardRect(i);
+      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        if (i > highestUnlocked) return; // locked
+        levelIndex = i;
+        resetLevel(true);
+        mode = "playing";
+        return;
+      }
+    }
+  }
+
+  function drawLevelSelect() {
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const sky = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+    sky.addColorStop(0, "#1e3a5f"); sky.addColorStop(1, "#0f172a");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    // Back button
+    ctx.fillStyle = "rgba(255,255,255,0.1)";
+    _roundRect(20, 20, 90, 35, 10); ctx.fill();
+    ctx.fillStyle = "#f8fafc"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "center";
+    ctx.fillText("← Back", 65, 42);
+
+    ctx.fillStyle = "#fbbf24"; ctx.font = "bold 36px system-ui"; ctx.textAlign = "center";
+    ctx.fillText("Select a Level", VIEW_W / 2, 85);
+
+    const LEVELS = window.KQ_LEVELS || [];
+    for (let i = 0; i < LEVELS.length; i++) {
+      const lv = LEVELS[i];
+      const r = _lsCardRect(i);
+      const locked = i > highestUnlocked;
+
+      ctx.fillStyle = locked ? "rgba(30,41,59,0.8)" : (i === levelIndex ? "rgba(251,191,36,0.2)" : "rgba(15,23,42,0.85)");
+      _roundRect(r.x, r.y, r.w, r.h, 14); ctx.fill();
+      ctx.strokeStyle = locked ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.18)";
+      ctx.lineWidth = 2; ctx.stroke();
+
+      if (locked) {
+        ctx.fillStyle = "#475569"; ctx.font = "bold 28px system-ui"; ctx.textAlign = "center";
+        ctx.fillText("🔒", r.x + r.w / 2, r.y + r.h / 2 + 10);
+        ctx.fillStyle = "#475569"; ctx.font = "13px system-ui";
+        ctx.fillText("Locked", r.x + r.w / 2, r.y + r.h / 2 + 34);
+      } else {
+        ctx.fillStyle = "#fbbf24"; ctx.font = "bold 14px system-ui"; ctx.textAlign = "left";
+        ctx.fillText(`Level ${i + 1}`, r.x + 16, r.y + 28);
+        ctx.fillStyle = "#f1f5f9"; ctx.font = "bold 18px system-ui"; ctx.textAlign = "center";
+        ctx.fillText(lv.name, r.x + r.w / 2, r.y + 60);
+        ctx.fillStyle = "#94a3b8"; ctx.font = "13px system-ui";
+        ctx.fillText(`${lv.enemies ? lv.enemies.length : 0} enemies · ${lv.coins ? lv.coins.length : 0} coins`, r.x + r.w / 2, r.y + 82);
+      }
+    }
+    ctx.restore();
+  }
+
   // ── Main loop ──────────────────────────────────────────────
   function update(dt) {
     game.time += dt;
     KQ_GAMEPAD.poll();
     if (mode === "playing") {
+      updateMovingPlatforms(dt);
       updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
       updateEffects(dt); updateCamera(dt);
     } else {
@@ -820,6 +1204,11 @@
       return;
     }
 
+    if (mode === "levelselect") {
+      drawLevelSelect();
+      return;
+    }
+
     drawBackground();
     drawParallax();
     ctx.save();
@@ -832,7 +1221,7 @@
     if (!imagesLoaded) {
       drawOverlay("Kid Quest", "Loading art files…", "Almost ready");
     } else if (mode === "paused") {
-      drawOverlay("Paused", "Take a break!", "Press P to Resume");
+      drawPauseMenu();
     } else if (mode === "gameover") {
       drawOverlay("Game Over", `Final Score: ${game.score}`, "Press R · Enter · Tap to Try Again");
     } else if (mode === "win") {
@@ -868,7 +1257,8 @@
     // ── Main menu ──────────────────────────────────────────
     document.getElementById('btn-play').addEventListener('click', () => {
       ensureAudio(); beep('menu');
-      levelIndex = 0; resetLevel(true); mode = 'playing';
+      // Go to level select
+      mode = 'levelselect';
       _hideAllPanels();
     });
 
@@ -899,7 +1289,11 @@
         "Stomp enemies by jumping on them!\n" +
         "Hit question blocks from below for coins.\n" +
         "Collect all 5 power-ups to unlock special moves.\n" +
-        "Reach the FLAG to finish the level!"
+        "Reach the FLAG to finish the level!\n\n" +
+        "Enemy types:\n" +
+        "  👾 Walker — patrols platforms\n" +
+        "  🐸 Jumper — jumps toward you!\n" +
+        "  🦋 Flyer  — floats in the air"
       );
     });
 

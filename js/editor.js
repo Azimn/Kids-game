@@ -19,10 +19,16 @@ const KQ_EDITOR = (() => {
   let level = null;   // the level object being edited
   let camX  = 0;
 
-  let tool     = 'tile';   // 'tile' | 'coin' | 'powerup' | 'enemy' | 'erase' | 'start'
-  let tileTool = 'X';      // which tile character to paint
-  let puTool   = 'blaster';
+  let tool      = 'tile';   // 'tile' | 'coin' | 'powerup' | 'enemy' | 'erase' | 'start' | 'fill'
+  let tileTool  = 'X';      // which tile character to paint
+  let puTool    = 'blaster';
+  let enemyType = 'walker'; // 'walker' | 'jumper' | 'flyer'
   let isPainting = false;
+
+  // Undo / Redo stacks
+  const MAX_UNDO = 50;
+  let undoStack = [];
+  let redoStack = [];
 
   const TILE_LABELS = {
     'X': 'Ground',
@@ -48,6 +54,34 @@ const KQ_EDITOR = (() => {
     dash:       '#60a5fa',
     giant:      '#a855f7',
   };
+
+  const ENEMY_COLORS = {
+    walker: '#fb923c',
+    jumper: '#f97316',
+    flyer:  '#c084fc',
+  };
+
+  // ── Undo helpers ───────────────────────────────────────────
+  function _snapshot() {
+    if (!level) return;
+    undoStack.push(JSON.stringify(level.map));
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack = [];
+  }
+
+  function undo() {
+    if (!undoStack.length) return;
+    redoStack.push(JSON.stringify(level.map));
+    level.map = JSON.parse(undoStack.pop());
+    _showMsg('Undo ↩');
+  }
+
+  function redo() {
+    if (!redoStack.length) return;
+    undoStack.push(JSON.stringify(level.map));
+    level.map = JSON.parse(redoStack.pop());
+    _showMsg('Redo ↪');
+  }
 
   // ── Init ───────────────────────────────────────────────────
   function init(canvasEl, panelEl) {
@@ -80,8 +114,10 @@ const KQ_EDITOR = (() => {
       coins:   [],
       powerups:[],
       enemies: [],
+      movingPlatforms: [],
       _custom: true,
     };
+    undoStack = []; redoStack = [];
     camX = 0;
     _refreshPanel();
   }
@@ -90,6 +126,8 @@ const KQ_EDITOR = (() => {
   function loadLevel(lvlData) {
     level = JSON.parse(JSON.stringify(lvlData));
     level._custom = true;
+    if (!level.movingPlatforms) level.movingPlatforms = [];
+    undoStack = []; redoStack = [];
     camX = 0;
     _refreshPanel();
   }
@@ -99,6 +137,7 @@ const KQ_EDITOR = (() => {
     canvas.addEventListener('mousedown', e => {
       if (!active) return;
       isPainting = true;
+      _snapshot();
       _handleClick(e);
     });
     canvas.addEventListener('mousemove', e => {
@@ -113,6 +152,7 @@ const KQ_EDITOR = (() => {
       if (!active) return;
       e.preventDefault();
       isPainting = true;
+      _snapshot();
       _handleTouch(e);
     }, { passive: false });
     canvas.addEventListener('touchmove', e => {
@@ -154,6 +194,8 @@ const KQ_EDITOR = (() => {
     if (tool === 'tile' || tool === 'erase') {
       const ch = tool === 'erase' ? '.' : tileTool;
       _setTile(col, row, ch);
+    } else if (tool === 'fill') {
+      _floodFill(col, row, tool === 'erase' ? '.' : tileTool);
     } else if (tool === 'coin') {
       const px = col * TILE_SIZE + 11, py = row * TILE_SIZE + 11;
       if (!level.coins.find(c => Math.abs(c.x - px) < 10 && Math.abs(c.y - py) < 10))
@@ -165,20 +207,40 @@ const KQ_EDITOR = (() => {
     } else if (tool === 'enemy') {
       const px = col * TILE_SIZE, py = row * TILE_SIZE;
       if (!level.enemies.find(en => Math.abs(en.x - px) < 20))
-        level.enemies.push({ type: 'walker', x: px, y: py, patrol: 150 });
+        level.enemies.push({ type: enemyType, x: px, y: py, patrol: enemyType === 'jumper' ? 20 : 150 });
     } else if (tool === 'start') {
       level.playerStart = {
         x: col * TILE_SIZE + 8,
         y: row * TILE_SIZE
       };
     } else if (tool === 'eraseEntity') {
-      const wx = col * TILE_SIZE, wy = row * TILE_SIZE;
       level.coins   = level.coins.filter(c =>
         !(Math.floor((c.x) / TILE_SIZE) === col && Math.floor(c.y / TILE_SIZE) === row));
       level.powerups = level.powerups.filter(p =>
         !(Math.floor(p.x / TILE_SIZE) === col && Math.floor(p.y / TILE_SIZE) === row));
       level.enemies = level.enemies.filter(en =>
         !(Math.floor(en.x / TILE_SIZE) === col && Math.floor(en.y / TILE_SIZE) === row));
+    }
+  }
+
+  // ── Flood fill ─────────────────────────────────────────────
+  function _floodFill(startCol, startRow, newCh) {
+    const oldCh = _getTile(startCol, startRow);
+    if (oldCh === newCh) return;
+    const queue = [[startCol, startRow]];
+    const visited = new Set();
+    const key = (c, r) => c + ',' + r;
+    visited.add(key(startCol, startRow));
+    while (queue.length) {
+      const [c, r] = queue.shift();
+      if (_getTile(c, r) !== oldCh) continue;
+      _setTile(c, r, newCh);
+      for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nc >= level.width || nr < 0 || nr >= level.height) continue;
+        const k = key(nc, nr);
+        if (!visited.has(k)) { visited.add(k); queue.push([nc, nr]); }
+      }
     }
   }
 
@@ -191,6 +253,25 @@ const KQ_EDITOR = (() => {
   function _getTile(col, row) {
     if (row < 0 || row >= level.height || col < 0 || col >= level.width) return '.';
     return level.map[row][col] || '.';
+  }
+
+  // ── Resize ─────────────────────────────────────────────────
+  function addWidth() {
+    if (!level) return;
+    _snapshot();
+    const add = 10;
+    level.map = level.map.map(row => row + '.'.repeat(add));
+    level.width += add;
+    _showMsg('+10 columns added');
+  }
+
+  function removeWidth() {
+    if (!level || level.width <= 20) return;
+    _snapshot();
+    const rem = 10;
+    level.map = level.map.map(row => row.slice(0, -rem));
+    level.width -= rem;
+    _showMsg('-10 columns removed');
   }
 
   // ── Render ─────────────────────────────────────────────────
@@ -255,12 +336,13 @@ const KQ_EDITOR = (() => {
 
     // Enemies
     for (const e of level.enemies) {
-      ctx.fillStyle = '#fb923c';
+      ctx.fillStyle = ENEMY_COLORS[e.type] || '#fb923c';
       ctx.fillRect(e.x, e.y, 40, 34);
       ctx.fillStyle = '#111';
       ctx.font = 'bold 10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('👾', e.x + 20, e.y + 22);
+      const icon = e.type === 'flyer' ? '🦋' : e.type === 'jumper' ? '🐸' : '👾';
+      ctx.fillText(icon, e.x + 20, e.y + 22);
     }
 
     // Player start
@@ -294,7 +376,9 @@ const KQ_EDITOR = (() => {
 
   function _toolLabel() {
     if (tool === 'tile') return TILE_LABELS[tileTool] || tileTool;
+    if (tool === 'fill') return 'Fill: ' + (TILE_LABELS[tileTool] || tileTool);
     if (tool === 'powerup') return 'Power-up: ' + puTool;
+    if (tool === 'enemy') return 'Enemy: ' + enemyType;
     return tool.charAt(0).toUpperCase() + tool.slice(1);
   }
 
@@ -338,6 +422,7 @@ const KQ_EDITOR = (() => {
             `<button class="ed-swatch ed-tile" data-ch="${ch}" title="${lbl}"
               style="background:${TILE_COLORS[ch] || '#334155'}">${ch === '.' ? '✖' : ch}</button>`
           ).join('')}
+          <button class="ed-swatch ed-fill-btn" id="ed-fill" title="Paint Bucket / Flood Fill" style="background:#0ea5e9">🪣</button>
         </div>
       </div>
 
@@ -348,6 +433,15 @@ const KQ_EDITOR = (() => {
           <button class="ed-swatch" data-tool="enemy"   style="background:#fb923c">👾</button>
           <button class="ed-swatch" data-tool="start"   style="background:#2563eb">🏁</button>
           <button class="ed-swatch" data-tool="eraseEntity" style="background:#64748b">🗑</button>
+        </div>
+      </div>
+
+      <div class="ed-section" id="ed-enemy-picker" style="display:none">
+        <label class="ed-label">Enemy Type</label>
+        <div class="ed-palette">
+          <button class="ed-swatch ed-etype active" data-etype="walker" style="background:#fb923c" title="Walker">👾</button>
+          <button class="ed-swatch ed-etype" data-etype="jumper" style="background:#f97316" title="Jumper">🐸</button>
+          <button class="ed-swatch ed-etype" data-etype="flyer"  style="background:#c084fc" title="Flyer">🦋</button>
         </div>
       </div>
 
@@ -369,6 +463,22 @@ const KQ_EDITOR = (() => {
         </div>
       </div>
 
+      <div class="ed-section">
+        <label class="ed-label">Resize Level</label>
+        <div style="display:flex;gap:6px">
+          <button class="ed-btn" id="ed-addW">+ Width</button>
+          <button class="ed-btn" id="ed-remW">- Width</button>
+        </div>
+      </div>
+
+      <div class="ed-section">
+        <label class="ed-label">Undo / Redo</label>
+        <div style="display:flex;gap:6px">
+          <button class="ed-btn" id="ed-undo">↩ Undo</button>
+          <button class="ed-btn" id="ed-redo">↪ Redo</button>
+        </div>
+      </div>
+
       <hr class="ed-hr"/>
 
       <div class="ed-section">
@@ -383,16 +493,30 @@ const KQ_EDITOR = (() => {
     // Tile swatches
     panel.querySelectorAll('.ed-tile').forEach(btn => {
       btn.addEventListener('click', () => {
+        if (tool === 'fill') {
+          tileTool = btn.dataset.ch;
+          _highlightActive();
+          return;
+        }
         tool     = btn.dataset.ch === '.' ? 'erase' : 'tile';
         tileTool = btn.dataset.ch;
         _highlightActive();
       });
     });
 
+    // Fill / bucket button
+    panel.querySelector('#ed-fill').addEventListener('click', () => {
+      tool = 'fill';
+      _highlightActive();
+    });
+
     // Generic tool buttons
     panel.querySelectorAll('[data-tool]').forEach(btn => {
       btn.addEventListener('click', () => {
         tool = btn.dataset.tool;
+        // Show enemy picker when enemy tool selected
+        const picker = panel.querySelector('#ed-enemy-picker');
+        if (picker) picker.style.display = (tool === 'enemy') ? '' : 'none';
         _highlightActive();
       });
     });
@@ -406,8 +530,21 @@ const KQ_EDITOR = (() => {
       });
     });
 
+    // Enemy type picker
+    panel.querySelectorAll('.ed-etype').forEach(btn => {
+      btn.addEventListener('click', () => {
+        enemyType = btn.dataset.etype;
+        panel.querySelectorAll('.ed-etype').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+
     panel.querySelector('#ed-scrollL').addEventListener('click', scrollLeft);
     panel.querySelector('#ed-scrollR').addEventListener('click', scrollRight);
+    panel.querySelector('#ed-addW').addEventListener('click', addWidth);
+    panel.querySelector('#ed-remW').addEventListener('click', removeWidth);
+    panel.querySelector('#ed-undo').addEventListener('click', undo);
+    panel.querySelector('#ed-redo').addEventListener('click', redo);
 
     panel.querySelector('#ed-name').addEventListener('input', e => {
       if (level) level.name = e.target.value.trim() || 'My Level';
@@ -435,7 +572,12 @@ const KQ_EDITOR = (() => {
 
   function _highlightActive() {
     panel.querySelectorAll('.ed-swatch').forEach(b => b.classList.remove('active'));
-    if (tool === 'tile' || tool === 'erase') {
+    if (tool === 'fill') {
+      panel.querySelector('#ed-fill').classList.add('active');
+      const ch = tileTool === '.' ? '.' : tileTool;
+      const btn = panel.querySelector(`.ed-tile[data-ch="${ch}"]`);
+      if (btn) btn.classList.add('active');
+    } else if (tool === 'tile' || tool === 'erase') {
       const ch = tool === 'erase' ? '.' : tileTool;
       const btn = panel.querySelector(`.ed-tile[data-ch="${ch}"]`);
       if (btn) btn.classList.add('active');
@@ -446,6 +588,10 @@ const KQ_EDITOR = (() => {
       const btn = panel.querySelector(`[data-tool="${tool}"]`);
       if (btn) btn.classList.add('active');
     }
+    // Keep enemy type active state
+    panel.querySelectorAll('.ed-etype').forEach(b => {
+      b.classList.toggle('active', b.dataset.etype === enemyType);
+    });
   }
 
   function _refreshPanel() {
@@ -461,11 +607,16 @@ const KQ_EDITOR = (() => {
     el._t = setTimeout(() => { el.textContent = ''; }, timeout);
   }
 
-  // ── Keyboard scroll in editor ──────────────────────────────
+  // ── Keyboard scroll + undo/redo in editor ──────────────────
   function handleKey(e) {
     if (!active) return;
     if (e.code === 'ArrowLeft')  { scrollLeft();  e.preventDefault(); }
     if (e.code === 'ArrowRight') { scrollRight(); e.preventDefault(); }
+    if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); }
+    if ((e.key === 'y' && (e.ctrlKey || e.metaKey)) ||
+        (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey)) {
+      e.preventDefault(); redo();
+    }
   }
 
   // ── Public API ─────────────────────────────────────────────

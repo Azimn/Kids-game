@@ -67,9 +67,14 @@ window.KQ_LEVELS = [
     enemies: [
       { type: "walker", x: 760,  y: 480, patrol: 190 },
       { type: "walker", x: 1450, y: 480, patrol: 260 },
-      { type: "walker", x: 2260, y: 480, patrol: 190 },
+      { type: "jumper", x: 2260, y: 480, patrol: 20  },
       { type: "walker", x: 3040, y: 480, patrol: 260 },
-      { type: "walker", x: 3920, y: 480, patrol: 260 }
+      { type: "flyer",  x: 3920, y: 300, patrol: 160 }
+    ],
+
+    movingPlatforms: [
+      { x: 600,  y: 300, w: 96, h: 20, axis: 'x', range: 120, speed: 80 },
+      { x: 900,  y: 220, w: 96, h: 20, axis: 'y', range: 80,  speed: 60 },
     ]
   },
 
@@ -121,11 +126,16 @@ window.KQ_LEVELS = [
 
     enemies: [
       { type: "walker", x: 700,  y: 420, patrol: 150 },
-      { type: "walker", x: 1400, y: 420, patrol: 200 },
-      { type: "walker", x: 2100, y: 140, patrol: 180 },
+      { type: "jumper", x: 1400, y: 420, patrol: 20  },
+      { type: "flyer",  x: 2100, y: 200, patrol: 200 },
       { type: "walker", x: 2800, y: 420, patrol: 200 },
-      { type: "walker", x: 3500, y: 280, patrol: 160 },
-      { type: "walker", x: 4200, y: 420, patrol: 250 }
+      { type: "jumper", x: 3500, y: 420, patrol: 20  },
+      { type: "flyer",  x: 4200, y: 180, patrol: 250 }
+    ],
+
+    movingPlatforms: [
+      { x: 480,  y: 340, w: 96, h: 20, axis: 'x', range: 140, speed: 90 },
+      { x: 1700, y: 260, w: 96, h: 20, axis: 'y', range: 100, speed: 70 },
     ]
   },
 
@@ -178,13 +188,18 @@ window.KQ_LEVELS = [
 
     enemies: [
       { type: "walker", x: 450,  y: 80, patrol: 160 },
-      { type: "walker", x: 900,  y: 80, patrol: 160 },
+      { type: "jumper", x: 900,  y: 80, patrol: 20  },
       { type: "walker", x: 1400, y: 80, patrol: 160 },
-      { type: "walker", x: 1900, y: 80, patrol: 160 },
+      { type: "flyer",  x: 1900, y: 80, patrol: 160 },
       { type: "walker", x: 2400, y: 80, patrol: 160 },
-      { type: "walker", x: 2900, y: 80, patrol: 160 },
+      { type: "jumper", x: 2900, y: 80, patrol: 20  },
       { type: "walker", x: 3400, y: 80, patrol: 160 },
-      { type: "walker", x: 3900, y: 80, patrol: 160 }
+      { type: "flyer",  x: 3900, y: 80, patrol: 160 }
+    ],
+
+    movingPlatforms: [
+      { x: 700,  y: 350, w: 96, h: 20, axis: 'x', range: 160, speed: 100 },
+      { x: 2000, y: 200, w: 96, h: 20, axis: 'y', range: 90,  speed: 80  },
     ]
   }
 ];
