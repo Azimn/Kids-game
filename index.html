@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"/>
+  <title>Placeholder Game – Kid Quest Kit</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <main id="gameShell">
+
+    <!-- Game canvas (always present, drawn on every frame) -->
+    <canvas id="game" width="960" height="540" aria-label="Platformer Game"></canvas>
+
+    <!-- Gamepad toast notification -->
+    <div id="gpToast"></div>
+
+    <!-- ── MAIN MENU ──────────────────────────────────────── -->
+    <section id="menuPanel">
+      <div class="menu-card">
+        <div class="menu-title">Placeholder Game</div>
+        <p class="menu-sub">Replace <code>assets/art/title-logo.png</code> to change the title!</p>
+
+        <button class="menu-btn menu-btn-primary" id="btn-play">▶ Play Game</button>
+        <button class="menu-btn" id="btn-editor">🗺 Level Editor</button>
+        <button class="menu-btn" id="btn-settings">⚙ Settings &amp; Modifiers</button>
+        <button class="menu-btn" id="btn-howtoplay">❓ How to Play</button>
+        <button class="menu-btn" id="btn-export">📦 Export My Game</button>
+      </div>
+    </section>
+
+    <!-- ── SETTINGS PANEL ────────────────────────────────── -->
+    <section id="settingsPanel" style="display:none">
+      <div class="menu-card settings-card">
+        <div class="menu-title" style="font-size:28px">⚙ Settings &amp; Modifiers</div>
+        <p class="menu-sub">Tweak the game feel — move the sliders and see what happens!</p>
+        <div id="settings-sliders"></div>
+        <div style="display:flex;gap:12px;margin-top:18px;flex-wrap:wrap">
+          <button class="menu-btn" id="btn-settings-reset">🔄 Reset to Defaults</button>
+          <button class="menu-btn menu-btn-primary" id="btn-settings-back">← Back to Menu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── LEVEL EDITOR PANEL ─────────────────────────────── -->
+    <section id="editorPanel" style="display:none">
+      <!-- The canvas is used directly for the editor viewport.   -->
+      <!-- This div holds the editor's HTML side-panel controls.  -->
+      <div id="editorSidePanel"></div>
+    </section>
+
+    <!-- ── TOUCH / GAMEPAD CONTROLS ──────────────────────── -->
+    <nav id="touchControls" aria-label="Touch controls">
+      <button data-touch="left" aria-label="Move left">◀</button>
+      <button data-touch="right" aria-label="Move right">▶</button>
+      <button data-touch="jump" aria-label="Jump">A</button>
+      <button data-touch="shoot" aria-label="Shoot">B</button>
+      <button data-touch="dash" aria-label="Dash">Dash</button>
+    </nav>
+
+  </main>
+
+  <!-- Scripts load in dependency order -->
+  <script src="js/settings.js"></script>
+  <script src="js/gamepad.js"></script>
+  <script src="js/assets.js"></script>
+  <script src="js/levels.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

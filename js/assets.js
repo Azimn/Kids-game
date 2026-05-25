@@ -1,92 +1,63 @@
-// =============================================================
-//  ASSET MANAGER
-//  Loads images and falls back to placeholder shapes if the
-//  file doesn't exist — so the game always runs even with no art.
-// =============================================================
+/*
+  Kid Quest — Asset Manifest
+  ──────────────────────────
+  To swap out any graphic, replace the PNG file in assets/art/
+  using the SAME filename.  The game works with coloured shapes
+  if a file is missing, so nothing will break.
 
-class AssetManager {
-  constructor() {
-    this._cache = {};      // url -> HTMLImageElement (or null = missing)
-    this._pending = 0;
-    this._done = 0;
-  }
+  Want to rename a file?  Change the path string here to match.
+  Want to add new art?    Add a new key and point it at your file.
+*/
+window.KQ_ASSETS = {
+  titleLogo:  "assets/art/title-logo.png",
 
-  // Queue an image for loading.  Returns immediately; call whenReady().
-  load(url) {
-    if (url in this._cache) return;
-    this._cache[url] = null;   // mark as requested-but-loading
-    this._pending++;
+  // ── Backgrounds ─────────────────────────────────────────────
+  // One image fills the whole screen behind the level.
+  // Drop any PNG here — it will stretch to fit.
+  backgrounds: {
+    bg_meadow: "assets/art/background.png",
+    bg_sky:    "assets/art/background.png",   // swap with your own sky art
+    bg_cave:   "assets/art/background.png",   // swap with your own cave art
+  },
 
-    const img = new Image();
-    img.onload = () => {
-      this._cache[url] = img;
-      this._done++;
-    };
-    img.onerror = () => {
-      // Missing file is OK — drawing code uses placeholder
-      this._cache[url] = null;
-      this._done++;
-    };
-    img.src = url;
-  }
+  // ── Player frames ────────────────────────────────────────────
+  // idle  = standing still
+  // run1/run2 = two walking frames (flips between them)
+  // jump  = in the air
+  // hurt  = just got hit
+  player: {
+    idle: "assets/art/player-idle.png",
+    run1: "assets/art/player-run-1.png",
+    run2: "assets/art/player-run-2.png",
+    jump: "assets/art/player-jump.png",
+    hurt: "assets/art/player-hurt.png"
+  },
 
-  // Load every path referenced in the manifest
-  loadAll(manifest) {
-    const walk = (node) => {
-      if (typeof node === 'string') { this.load(node); }
-      else if (Array.isArray(node)) { node.forEach(walk); }
-      else if (node && typeof node === 'object') { Object.values(node).forEach(walk); }
-    };
-    walk(manifest);
-  }
+  // ── Tiles ────────────────────────────────────────────────────
+  tiles: {
+    ground:    "assets/art/tile-ground.png",
+    brick:     "assets/art/tile-brick.png",
+    question:  "assets/art/tile-question.png",
+    breakable: "assets/art/tile-breakable.png",
+    spike:     "assets/art/tile-spike.png",
+    goal:      "assets/art/goal-flag.png"
+  },
 
-  get(url) { return this._cache[url] || null; }
+  // ── Collectibles & Power-ups ─────────────────────────────────
+  items: {
+    coin:       "assets/art/coin.png",
+    blaster:    "assets/art/power-blaster.png",
+    shield:     "assets/art/power-shield.png",
+    doubleJump: "assets/art/power-double-jump.png",
+    dash:       "assets/art/power-dash.png",
+    giant:      "assets/art/power-giant.png"
+  },
 
-  get progress() {
-    if (this._pending === 0) return 1;
-    return this._done / this._pending;
-  }
+  // ── Enemies ──────────────────────────────────────────────────
+  enemies: {
+    walker: "assets/art/enemy-walker.png"
+  },
 
-  get ready() { return this._pending === this._done; }
-
-  // ── Drawing helpers ────────────────────────────────────────
-
-  // Draw an image or a coloured placeholder rectangle
-  drawOrRect(ctx, url, x, y, w, h, placeholderColor = '#888', label = '') {
-    const img = this.get(url);
-    if (img) {
-      ctx.drawImage(img, x, y, w, h);
-    } else {
-      ctx.fillStyle = placeholderColor;
-      ctx.fillRect(x, y, w, h);
-      if (label) {
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.font = `bold ${Math.floor(h * 0.35)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, x + w / 2, y + h / 2, w - 4);
-      }
-    }
-  }
-
-  // Draw a frame from an animation array
-  drawFrame(ctx, urls, frameIndex, x, y, w, h, placeholderColor = '#888', flipX = false) {
-    if (!urls || urls.length === 0) {
-      ctx.fillStyle = placeholderColor;
-      ctx.fillRect(x, y, w, h);
-      return;
-    }
-    const url = urls[frameIndex % urls.length];
-    if (flipX) {
-      ctx.save();
-      ctx.translate(x + w, y);
-      ctx.scale(-1, 1);
-      this.drawOrRect(ctx, url, 0, 0, w, h, placeholderColor);
-      ctx.restore();
-    } else {
-      this.drawOrRect(ctx, url, x, y, w, h, placeholderColor);
-    }
-  }
-}
-
-const assets = new AssetManager();
+  // ── Projectile ───────────────────────────────────────────────
+  projectile: "assets/art/projectile.png"
+};
