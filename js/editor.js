@@ -428,6 +428,10 @@ const KQ_EDITOR = (() => {
   // ── HTML side panel ────────────────────────────────────────
   function _buildPanel() {
     panel.innerHTML = `
+      <div class="ed-topbar">
+        <button class="ed-btn ed-btn-menu" id="ed-back-top">← Menu</button>
+      </div>
+
       <div class="ed-section">
         <label class="ed-label">Level Name</label>
         <input id="ed-name" class="ed-input" type="text" value="My Level" maxlength="30" />
@@ -596,9 +600,9 @@ const KQ_EDITOR = (() => {
       document.dispatchEvent(new CustomEvent('kq:playtestLevel', { detail: level }));
     });
 
-    panel.querySelector('#ed-back').addEventListener('click', () => {
+    panel.querySelectorAll('#ed-back, #ed-back-top').forEach(btn => btn.addEventListener('click', () => {
       document.dispatchEvent(new CustomEvent('kq:editorBack'));
-    });
+    }));
 
     _highlightActive();
   }

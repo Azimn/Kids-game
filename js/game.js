@@ -33,7 +33,7 @@
   let cameraX     = 0;
   let screenShake = 0;
   let lastTime    = performance.now();
-  let mode        = "title";  // title | menu | playing | paused | editor | settings | gameover | win | levelselect
+  let mode        = "menu";  // title | menu | playing | paused | editor | settings | gameover | win | levelselect
   let levelIndex  = 0;
   let playtestReturnMode = null;
 
@@ -292,13 +292,20 @@
     if (mode === "title") {
       ensureAudio();
       beep('menu');
-      mode = "menu";
-      _showMenuPanel();
+      const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
+      if (gmode === 'shooter') {
+        _shooterInit();
+        mode = 'playing';
+      } else if (gmode === 'brawler') {
+        _brawlerInit();
+        mode = 'playing';
+      } else {
+        mode = "levelselect";
+      }
       return;
     }
     if (mode === "menu") {
-      // Go to level select instead of directly playing
-      mode = "levelselect";
+      mode = "title";
       _hideAllPanels();
       return;
     }
@@ -2465,33 +2472,32 @@
     _updateGenreBtns();
 
     // ── Main menu ──────────────────────────────────────────
-    document.getElementById('btn-play').addEventListener('click', () => {
+    const playBtn = document.getElementById('btn-play');
+    if (playBtn) playBtn.addEventListener('click', () => {
       ensureAudio(); beep('menu');
-      const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
-      if (gmode === 'shooter') {
-        _shooterInit(); mode = 'playing'; _hideAllPanels();
-      } else if (gmode === 'brawler') {
-        _brawlerInit(); mode = 'playing'; _hideAllPanels();
-      } else {
-        mode = 'levelselect'; _hideAllPanels();
-      }
+      mode = 'title';
+      _hideAllPanels();
     });
 
-    document.getElementById('btn-editor').addEventListener('click', () => {
+    const editorBtn = document.getElementById('btn-editor');
+    if (editorBtn) editorBtn.addEventListener('click', () => {
       beep('menu'); mode = 'editor';
       KQ_EDITOR.show();
       _showEditorPanel();
     });
 
-    document.getElementById('btn-settings').addEventListener('click', () => {
+    const settingsBtn = document.getElementById('btn-settings');
+    if (settingsBtn) settingsBtn.addEventListener('click', () => {
       beep('menu'); _buildSettingsUI(); _showSettingsPanel();
     });
 
-    document.getElementById('btn-export').addEventListener('click', () => {
+    const exportBtn = document.getElementById('btn-export');
+    if (exportBtn) exportBtn.addEventListener('click', () => {
       beep('menu'); _exportGame();
     });
 
-    document.getElementById('btn-howtoplay').addEventListener('click', () => {
+    const howToPlayBtn = document.getElementById('btn-howtoplay');
+    if (howToPlayBtn) howToPlayBtn.addEventListener('click', () => {
       beep('menu');
       alert(
         "🎮 HOW TO PLAY\n\n" +
@@ -2513,15 +2519,18 @@
     });
 
     // ── Settings back ──────────────────────────────────────
-    document.getElementById('btn-settings-back').addEventListener('click', () => {
+    const settingsBackBtn = document.getElementById('btn-settings-back');
+    if (settingsBackBtn) settingsBackBtn.addEventListener('click', () => {
       beep('menu'); _showMenuPanel();
     });
-    document.getElementById('btn-settings-reset').addEventListener('click', () => {
+    const settingsResetBtn = document.getElementById('btn-settings-reset');
+    if (settingsResetBtn) settingsResetBtn.addEventListener('click', () => {
       KQ_SETTINGS.reset(); _buildSettingsUI();
     });
 
     // ── Level editor new/load ──────────────────────────────
-    document.getElementById('btn-editor-new').addEventListener('click', () => {
+    const editorNewBtn = document.getElementById('btn-editor-new');
+    if (editorNewBtn) editorNewBtn.addEventListener('click', () => {
       KQ_EDITOR.newLevel();
     });
 
@@ -2789,7 +2798,7 @@ for (const [k, v] of Object.entries(_bakedArt)) {
     if (edPanel) KQ_EDITOR.init(canvas, edPanel);
 
     _initMenuEvents();
-    _hideAllPanels(); // start on canvas title screen
+    _showMenuPanel();
 
     // Set up a blank level so the canvas has something to draw on startup
     levelIndex = 0;

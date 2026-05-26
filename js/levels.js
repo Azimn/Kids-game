@@ -430,13 +430,32 @@ window.KQ_LEVELS = [
 ];
 
 // ── Custom level slot (saved by the level editor) ─────────────
+function normalizeLevelMap(levelData) {
+  if (!levelData || !Array.isArray(levelData.map)) return levelData;
+  const rowWidth = Math.max(
+    levelData.width || 0,
+    ...levelData.map.map(row => String(row).length)
+  );
+  if (!rowWidth) return levelData;
+  levelData.width = rowWidth;
+  levelData.map = levelData.map.map(row =>
+    String(row).padEnd(rowWidth, '.').slice(0, rowWidth)
+  );
+  return levelData;
+}
+
+window.KQ_LEVELS.forEach(normalizeLevelMap);
+
 (function loadCustomLevels() {
   try {
     const raw = localStorage.getItem('kq_custom_levels');
     if (raw) {
       const custom = JSON.parse(raw);
       if (Array.isArray(custom)) {
-        custom.forEach(lvl => { lvl._custom = true; window.KQ_LEVELS.push(lvl); });
+        custom.forEach(lvl => {
+          lvl._custom = true;
+          window.KQ_LEVELS.push(normalizeLevelMap(lvl));
+        });
       }
     }
   } catch (e) {}
@@ -450,14 +469,15 @@ function saveCustomLevel(levelData) {
 
     // Replace if same id exists, otherwise append
     const idx = existing.findIndex(l => l.id === levelData.id);
-    if (idx >= 0) existing[idx] = levelData;
-    else existing.push(levelData);
+    const normalizedLevel = normalizeLevelMap(levelData);
+    if (idx >= 0) existing[idx] = normalizedLevel;
+    else existing.push(normalizedLevel);
 
     localStorage.setItem('kq_custom_levels', JSON.stringify(existing));
 
     // Refresh in the live array too
-    const liveIdx = window.KQ_LEVELS.findIndex(l => l.id === levelData.id);
-    if (liveIdx >= 0) window.KQ_LEVELS[liveIdx] = levelData;
-    else window.KQ_LEVELS.push(levelData);
+    const liveIdx = window.KQ_LEVELS.findIndex(l => l.id === normalizedLevel.id);
+    if (liveIdx >= 0) window.KQ_LEVELS[liveIdx] = normalizedLevel;
+    else window.KQ_LEVELS.push(normalizedLevel);
   } catch (e) { console.warn('Could not save custom level', e); }
 }
