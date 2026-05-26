@@ -420,3 +420,4 @@ const KQ_ART = (() => {
   init();
   return { getOverride, uploadForSlot, clearSlot, getDataURL, getSlots, buildUI };
 })();
+window.KQ_ART = KQ_ART;
