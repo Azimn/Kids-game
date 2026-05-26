@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/>
+  <title>🏎️ Kart Racer Framework</title>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{background:#0f172a;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui,sans-serif}}
+    canvas{{display:block;max-width:100%;border:2px solid #334155;border-radius:8px}}
+    #info{{color:#94a3b8;font-size:13px;margin-top:10px;text-align:center}}
+  </style>
+</head>
+<body>
+<canvas id="game" width="960" height="540"></canvas>
+<div id="info">🎮 Arrow Keys / WASD to move &nbsp;·&nbsp; Space / Z = Action &nbsp;·&nbsp; P = Pause &nbsp;·&nbsp; Click canvas first to capture input</div>
+<script>
+// ── Standalone scaffold: provides all _KQ_ globals the framework modules need ──
+const canvas = document.getElementById('game');
+const ctx    = canvas.getContext('2d');
+const VIEW_W = 960, VIEW_H = 540, TILE = 48;
+
+// Input
+const keys  = Object.create(null);
+const _nameMap = {{
+  ArrowLeft:'left', a:'left', A:'left',
+  ArrowRight:'right', d:'right', D:'right',
+  ArrowUp:'up', w:'up', W:'up',
+  ArrowDown:'down', s:'down', S:'down',
+  ' ':'jump', z:'jump', Z:'jump', Enter:'jump',
+  x:'shoot', X:'shoot', ControlLeft:'shoot', ControlRight:'shoot',
+  c:'dash', C:'dash', ShiftLeft:'dash', ShiftRight:'dash',
+}};
+document.addEventListener('keydown', e=>{{ if(!e.repeat){{keys[_nameMap[e.key]||e.code]=true; e.preventDefault();}} }});
+document.addEventListener('keyup',   e=>{{ keys[_nameMap[e.key]||e.code]=false; }});
+
+// Touch controls (tap left/right halves of canvas to steer, tap upper-right to jump)
+canvas.addEventListener('touchstart', e=>{{
+  e.preventDefault();
+  for(const t of e.changedTouches){{
+    const r=canvas.getBoundingClientRect();
+    const x=(t.clientX-r.left)*(VIEW_W/r.width), y=(t.clientY-r.top)*(VIEW_H/r.height);
+    if(x<VIEW_W*0.33) keys['left']=true;
+    else if(x>VIEW_W*0.66) keys['right']=true;
+    else keys['jump']=true;
+  }}
+}},{{passive:false}});
+canvas.addEventListener('touchend', e=>{{ e.preventDefault(); keys['left']=keys['right']=keys['jump']=false; }}, {{passive:false}});
+
+// Settings (minimal stub)
+window.KQ_SETTINGS = {{ get: k => ({{gravityMult:1,speedMult:1,jumpMult:1,enemySpeedMult:1,startLives:3,infiniteLives:false,invincibleMode:false,tintPlayer:''}}[k]||null) }};
+
+// Assets (no files in standalone — falls back to colored shapes in all drawImg calls)
+window.KQ_ASSETS = {{ player:{{}}, enemies:{{}}, tiles:{{}}, items:{{}}, backgrounds:{{}} }};
+
+// Shared game state
+const _game = {{ particles:[], popups:[], score:0 }};
+
+// Audio
+let _audioCtx = null;
+function _ensureAudio(){{
+  if(!_audioCtx){{ const C=window.AudioContext||window.webkitAudioContext; if(C) _audioCtx=new C(); }}
+  if(_audioCtx&&_audioCtx.state==='suspended') _audioCtx.resume();
+}}
+function _beep(type='coin'){{
+  _ensureAudio(); if(!_audioCtx) return;
+  const map={{coin:[880,.12],jump:[440,.1],shoot:[660,.08],hurt:[220,.2],stomp:[330,.12],win:[880,.5],power:[990,.18],menu:[550,.1]}};
+  const [freq,dur]=map[type]||[440,.1];
+  const o=_audioCtx.createOscillator(), g=_audioCtx.createGain();
+  o.connect(g); g.connect(_audioCtx.destination);
+  o.frequency.value=freq; o.type='square';
+  g.gain.setValueAtTime(0.15, _audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime+dur);
+  o.start(); o.stop(_audioCtx.currentTime+dur);
+}}
+canvas.addEventListener('click', _ensureAudio, {{once:true}});
+
+// Hint system
+let _hint=null, _hintDismissed={{}};
+function _showHint(key, lines){{ if(_hintDismissed[key]) return; _hint={{key,lines}}; }}
+function _drawHint(){{
+  if(!_hint) return;
+  const x=80,y=60,w=800,lh=24;
+  const h=_hint.lines.length*lh+60;
+  ctx.save();
+  ctx.fillStyle='rgba(15,23,42,0.93)'; ctx.strokeStyle='#fbbf24'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.roundRect(x,y,w,h,12); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#fbbf24'; ctx.font='bold 16px system-ui'; ctx.textAlign='center';
+  ctx.fillText('💡 TIP — click or press any key to close', x+w/2, y+28);
+  ctx.fillStyle='#e2e8f0'; ctx.font='15px system-ui';
+  _hint.lines.forEach((l,i)=>ctx.fillText(l, x+w/2, y+52+i*lh));
+  ctx.restore();
+}}
+document.addEventListener('keydown', ()=>{{ if(_hint){{ _hintDismissed[_hint.key]=true; _hint=null; }} }}, true);
+canvas.addEventListener('click', ()=>{{ if(_hint){{ _hintDismissed[_hint.key]=true; _hint=null; }} }});
+
+// drawImg stub (no files → always returns false so code falls through to colored shape)
+function _drawImg(){ return false; }
+
+// drawWithTint stub
+function _drawWithTint(tint, x, y, w, h, fn){{ fn(); }}
+
+// Particles / popups (simple version)
+function _spawnParticles(x,y,color,count=8){{
+  for(let i=0;i<count;i++) _game.particles.push({{
+    x,y,vx:(Math.random()-0.5)*160,vy:-Math.random()*200-60,life:0.6,maxLife:0.6,color,r:4
+  }});
+}}
+function _updateEffects(dt){{
+  _game.particles=_game.particles.filter(p=>{{
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=400*dt; p.life-=dt; return p.life>0;
+  }});
+  _game.popups=_game.popups.filter(p=>{{ p.y-=40*dt; p.life-=dt; return p.life>0; }});
+}}
+function _drawEffects(){{
+  for(const p of _game.particles){{
+    ctx.globalAlpha=Math.max(0,p.life/p.maxLife);
+    ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+  }}
+  ctx.globalAlpha=1;
+  for(const p of _game.popups){{
+    ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle='#fbbf24'; ctx.font='bold 16px system-ui'; ctx.textAlign='center';
+    ctx.fillText(p.text||'', p.x, p.y);
+  }}
+  ctx.globalAlpha=1;
+}}
+
+// Mode
+let _mode = 'playing';
+function _setMode(m){{ _mode=m; }}
+
+// Expose all globals the framework modules expect
+window._KQ_PRESSED     = name=>!!keys[name];
+window._KQ_BEEP        = _beep;
+window._KQ_CTX         = ctx;
+window._KQ_VIEW        = {{W:VIEW_W,H:VIEW_H}};
+window._KQ_TILE        = TILE;
+window._KQ_SETMODE     = _setMode;
+window._KQ_GAME        = _game;
+window._KQ_DRAWIMG     = _drawImg;
+window._KQ_DRAWWITHTINT= _drawWithTint;
+window._KQ_FX_UPDATE   = _updateEffects;
+window._KQ_FX_DRAW     = _drawEffects;
+window._KQ_HINT        = {{ show:_showHint, draw:_drawHint }};
+
+// ── Framework module JS (inlined below) ──────────────────────────────────────
+// kart.js — Mario Kart-style top-down kart racer
+// Exports window.KQ_KART = { init, update, render }
+
+(function () {
+  'use strict';
+
+  // ── Constants ──────────────────────────────────────────────────────────────
+  const W = 960, H = 540;
+  const CX = 480, CY = 270;
+  const OUTER_RX = 370, OUTER_RY = 200;
+  const INNER_RX = 200, INNER_RY = 100;
+  const CENTER_RX = (OUTER_RX + INNER_RX) / 2; // 285
+  const CENTER_RY = (OUTER_RY + INNER_RY) / 2; // 150
+  const HALF_W = 85;
+  const NUM_WAYPOINTS = 32;
+  const MAX_SPEED = 280;
+  const BOOST_SPEED = 450;
+  const AI_SPEED_MULT = 0.88;
+  const TOTAL_LAPS = 3;
+  const KART_SIZE = 22;
+  const ITEM_BOX_SIZE = 24;
+  const BOOST_DURATION = 3;
+  const ITEM_RESPAWN = 8;
+
+  // ── Waypoints along centerline ellipse ────────────────────────────────────
+  function makeWaypoints() {
+    const pts = [];
+    for (let i = 0; i < NUM_WAYPOINTS; i++) {
+      const a = (i / NUM_WAYPOINTS) * Math.PI * 2 - Math.PI / 2; // start at top
+      pts.push({ x: CX + CENTER_RX * Math.cos(a), y: CY + CENTER_RY * Math.sin(a) });
+    }
+    return pts;
+  }
+  const WAYPOINTS = makeWaypoints();
+
+  function nearestWaypoint(x, y) {
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < NUM_WAYPOINTS; i++) {
+      const dx = WAYPOINTS[i].x - x, dy = WAYPOINTS[i].y - y;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  function isOffTrack(x, y) {
+    const nx = (x - CX) / OUTER_RX, ny = (y - CY) / OUTER_RY;
+    const outerDist = nx * nx + ny * ny;
+    const ix = (x - CX) / INNER_RX, iy = (y - CY) / INNER_RY;
+    const innerDist = ix * ix + iy * iy;
+    return outerDist > 1 || innerDist < 1;
+  }
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let player, aiKarts, itemBoxes, countdown, raceStarted, raceOver;
+  let showResult, resultTitle, resultSub;
+
+  function makeKart(x, y, angle, color, isPlayer) {
+    return {
+      x, y, angle, speed: 0, color, isPlayer,
+      lapCount: 0, waypointIndex: nearestWaypoint(x, y),
+      prevWpIndex: nearestWaypoint(x, y),
+      item: null,        // 'boost' | 'shield' | null
+      shielded: false,
+      boostTimer: 0,
+      aiTargetWp: 1,
+    };
+  }
+
+  function makeItemBox(angle) {
+    const a = angle * Math.PI * 2 - Math.PI / 2;
+    return {
+      x: CX + CENTER_RX * Math.cos(a),
+      y: CY + CENTER_RY * Math.sin(a),
+      active: true,
+      respawnTimer: 0,
+    };
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  function init() {
+    const speedMult = (window.KQ_SETTINGS && window.KQ_SETTINGS.get('speedMult')) || 1;
+
+    // Player starts near bottom of track (angle ≈ 0.5, which is roughly the top)
+    const startA = -Math.PI / 2; // top of oval
+    const startX = CX + CENTER_RX * Math.cos(startA);
+    const startY = CY + CENTER_RY * Math.sin(startA) + HALF_W * 0.5; // slightly below start line
+
+    player = makeKart(startX, startY + 40, 0, '#3b82f6', true);
+    player._speedMult = speedMult;
+
+    aiKarts = [
+      makeKart(startX - 40, startY + 80, 0, '#ef4444', false),
+      makeKart(startX + 40, startY + 80, 0, '#22c55e', false),
+    ];
+    // Set AI initial waypoint targets
+    aiKarts.forEach(k => { k.aiTargetWp = 1; k.waypointIndex = 0; });
+
+    itemBoxes = [0.25, 0.5, 0.625, 0.875].map(makeItemBox);
+
+    countdown = 3;
+    raceStarted = false;
+    raceOver = false;
+    showResult = false;
+
+    if (window._KQ_HINT) {
+      window._KQ_HINT.show('kart', [
+        'Arrow keys to steer & accelerate',
+        'SPACE/DASH to use item',
+        '3 laps to win!',
+      ]);
+    }
+  }
+
+  // ── Countdown ─────────────────────────────────────────────────────────────
+  let countdownTimer = 0;
+
+  function resetCountdown() {
+    countdown = 3;
+    countdownTimer = 1.0;
+    raceStarted = false;
+  }
+
+  // ── Lap Detection ─────────────────────────────────────────────────────────
+  function checkLap(kart) {
+    const wp = nearestWaypoint(kart.x, kart.y);
+    const prev = kart.prevWpIndex;
+    // Crossed start/finish: waypoint jumps from high (>24) to low (<4)
+    if (prev > 24 && wp < 4) {
+      kart.lapCount++;
+      if (kart.isPlayer) {
+        if (kart.lapCount >= TOTAL_LAPS) {
+          endRace(true);
+        } else {
+          window._KQ_BEEP && window._KQ_BEEP('coin');
+        }
+      }
+    }
+    kart.prevWpIndex = wp;
+    kart.waypointIndex = wp;
+  }
+
+  function endRace(won) {
+    raceOver = true;
+    showResult = true;
+    if (won) {
+      resultTitle = 'You Win!';
+      resultSub = 'Congratulations — 1st place!';
+      window._KQ_BEEP && window._KQ_BEEP('win');
+      window._KQ_SETMODE && window._KQ_SETMODE('win');
+    } else {
+      resultTitle = 'Race Over';
+      resultSub = 'Better luck next time!';
+      window._KQ_SETMODE && window._KQ_SETMODE('gameover');
+    }
+  }
+
+  // ── Player Update ─────────────────────────────────────────────────────────
+  function updatePlayer(dt) {
+    const P = window._KQ_PRESSED;
+    const sm = player._speedMult || 1;
+    const maxSpd = (player.boostTimer > 0 ? BOOST_SPEED : MAX_SPEED) * sm;
+    const turnRate = 2.8;
+
+    if (P('left'))  player.angle -= turnRate * dt * (player.speed / maxSpd + 0.3);
+    if (P('right')) player.angle += turnRate * dt * (player.speed / maxSpd + 0.3);
+
+    if (P('up')) {
+      player.speed = Math.min(player.speed + 400 * dt, maxSpd);
+    } else if (P('down')) {
+      player.speed = Math.max(player.speed - 500 * dt, 0);
+    } else {
+      player.speed = Math.max(player.speed - 180 * dt, 0);
+    }
+
+    // Off-track penalty
+    if (isOffTrack(player.x, player.y)) {
+      player.speed = Math.min(player.speed, maxSpd * 0.4);
+    }
+
+    // Boost timer
+    if (player.boostTimer > 0) {
+      player.boostTimer -= dt;
+      if (player.boostTimer <= 0) player.boostTimer = 0;
+    }
+
+    // Use item
+    if (P('shoot') || P('dash')) {
+      if (player.item === 'boost' && player.boostTimer <= 0) {
+        player.boostTimer = BOOST_DURATION;
+        player.item = null;
+        window._KQ_BEEP && window._KQ_BEEP('power');
+      } else if (player.item === 'shield' && !player.shielded) {
+        player.shielded = true;
+        player.item = null;
+        window._KQ_BEEP && window._KQ_BEEP('jump');
+      }
+    }
+
+    moveKart(player, dt);
+    checkLap(player);
+  }
+
+  function moveKart(kart, dt) {
+    kart.x += Math.cos(kart.angle) * kart.speed * dt;
+    kart.y += Math.sin(kart.angle) * kart.speed * dt;
+  }
+
+  // ── AI Update ─────────────────────────────────────────────────────────────
+  function updateAI(kart, dt) {
+    const sm = (window.KQ_SETTINGS && window.KQ_SETTINGS.get('speedMult')) || 1;
+    const maxSpd = MAX_SPEED * AI_SPEED_MULT * sm;
+
+    const target = WAYPOINTS[kart.aiTargetWp];
+    const dx = target.x - kart.x, dy = target.y - kart.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const desiredAngle = Math.atan2(dy, dx);
+
+    // Steer toward target
+    let diff = desiredAngle - kart.angle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    kart.angle += Math.sign(diff) * Math.min(Math.abs(diff), 2.5 * dt);
+
+    // Accelerate
+    kart.speed = Math.min(kart.speed + 300 * dt, maxSpd);
+    if (isOffTrack(kart.x, kart.y)) kart.speed = Math.min(kart.speed, maxSpd * 0.4);
+
+    if (dist < 30) {
+      kart.aiTargetWp = (kart.aiTargetWp + 1) % NUM_WAYPOINTS;
+    }
+
+    moveKart(kart, dt);
+    checkLap(kart);
+  }
+
+  // ── Item Boxes ─────────────────────────────────────────────────────────────
+  function updateItemBoxes(dt) {
+    itemBoxes.forEach(box => {
+      if (!box.active) {
+        box.respawnTimer -= dt;
+        if (box.respawnTimer <= 0) box.active = true;
+      }
+    });
+
+    // Check pickup by player
+    itemBoxes.forEach(box => {
+      if (!box.active) return;
+      const dx = box.x - player.x, dy = box.y - player.y;
+      if (dx * dx + dy * dy < (ITEM_BOX_SIZE + KART_SIZE) * (ITEM_BOX_SIZE + KART_SIZE) * 0.5) {
+        box.active = false;
+        box.respawnTimer = ITEM_RESPAWN;
+        if (!player.item) {
+          player.item = Math.random() < 0.6 ? 'boost' : 'shield';
+          window._KQ_BEEP && window._KQ_BEEP('coin');
+        }
+      }
+    });
+  }
+
+  // ── Race Position ──────────────────────────────────────────────────────────
+  function getRacePosition() {
+    const all = [player, ...aiKarts];
+    const scored = all.map(k => ({
+      kart: k,
+      score: k.lapCount * NUM_WAYPOINTS + k.waypointIndex,
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    return scored.findIndex(s => s.kart === player) + 1;
+  }
+
+  // ── Update ─────────────────────────────────────────────────────────────────
+  let _countdownAccum = 0;
+  let _cdInitialized = false;
+
+  function update(dt) {
+    if (!player) return;
+
+    // Handle restart
+    if (showResult) {
+      const P = window._KQ_PRESSED;
+      if (P && (P('jump') || P('shoot'))) {
+        init();
+        _cdInitialized = false;
+      }
+      return;
+    }
+
+    // Initialize countdown once
+    if (!_cdInitialized) {
+      countdown = 3;
+      _countdownAccum = 0;
+      _cdInitialized = true;
+    }
+
+    if (!raceStarted) {
+      _countdownAccum += dt;
+      if (_countdownAccum >= 1.0) {
+        _countdownAccum -= 1.0;
+        countdown--;
+        if (countdown <= 0) {
+          raceStarted = true;
+          window._KQ_BEEP && window._KQ_BEEP('power');
+        } else {
+          window._KQ_BEEP && window._KQ_BEEP('menu');
+        }
+      }
+      return;
+    }
+
+    updatePlayer(dt);
+    aiKarts.forEach(k => updateAI(k, dt));
+    updateItemBoxes(dt);
+
+    if (window._KQ_FX_UPDATE) window._KQ_FX_UPDATE(dt);
+  }
+
+  // ── Drawing Helpers ────────────────────────────────────────────────────────
+  function drawTrack(ctx) {
+    // Outer grass (background)
+    ctx.fillStyle = '#15803d';
+    ctx.fillRect(0, 0, W, H);
+
+    // Asphalt (outer ellipse)
+    ctx.fillStyle = '#475569';
+    ctx.beginPath();
+    ctx.ellipse(CX, CY, OUTER_RX, OUTER_RY, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner grass
+    ctx.fillStyle = '#16a34a';
+    ctx.beginPath();
+    ctx.ellipse(CX, CY, INNER_RX, INNER_RY, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White dashed centerline
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([18, 18]);
+    ctx.beginPath();
+    ctx.ellipse(CX, CY, CENTER_RX, CENTER_RY, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Track edge lines
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(CX, CY, OUTER_RX - 4, OUTER_RY - 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(CX, CY, INNER_RX + 4, INNER_RY + 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Checkered start/finish line at top of oval
+    const sfX = CX - 24;
+    const sfY = CY - CENTER_RY;
+    const tileSize = 8;
+    const cols = 6, rows = 3;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        ctx.fillStyle = (r + c) % 2 === 0 ? '#fff' : '#000';
+        ctx.fillRect(sfX + c * tileSize - (cols * tileSize) / 2, sfY - (rows * tileSize) / 2 + r * tileSize, tileSize, tileSize);
+      }
+    }
+  }
+
+  function drawItemBoxes(ctx, t) {
+    itemBoxes.forEach(box => {
+      if (!box.active) return;
+      const pulse = 1 + 0.12 * Math.sin(t * 4);
+      const s = ITEM_BOX_SIZE * pulse;
+      // Glow
+      ctx.save();
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(box.x - s / 2, box.y - s / 2, s, s);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#1e293b';
+      ctx.font = `bold ${Math.round(s * 0.7)}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('?', box.x, box.y);
+      ctx.restore();
+    });
+  }
+
+  function drawKart(ctx, kart) {
+    ctx.save();
+    ctx.translate(kart.x, kart.y);
+    ctx.rotate(kart.angle);
+
+    // Shield aura
+    if (kart.shielded) {
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(0, 0, KART_SIZE + 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // Boost flame
+    if (kart.boostTimer > 0) {
+      ctx.fillStyle = '#f97316';
+      ctx.beginPath();
+      ctx.moveTo(-KART_SIZE * 0.5, -KART_SIZE * 0.3);
+      ctx.lineTo(-KART_SIZE * 1.4, 0);
+      ctx.lineTo(-KART_SIZE * 0.5, KART_SIZE * 0.3);
+      ctx.fill();
+    }
+
+    // Kart body
+    ctx.fillStyle = kart.color;
+    ctx.beginPath();
+    ctx.roundRect(-KART_SIZE * 0.9, -KART_SIZE * 0.6, KART_SIZE * 1.8, KART_SIZE * 1.2, 5);
+    ctx.fill();
+
+    // Windshield
+    ctx.fillStyle = 'rgba(186,230,253,0.7)';
+    ctx.fillRect(KART_SIZE * 0.1, -KART_SIZE * 0.4, KART_SIZE * 0.5, KART_SIZE * 0.8);
+
+    // Wheels
+    ctx.fillStyle = '#1e293b';
+    [[-0.5, -0.75], [0.5, -0.75], [-0.5, 0.75], [0.5, 0.75]].forEach(([fx, fy]) => {
+      ctx.fillRect(
+        fx * KART_SIZE * 1.1 - 5,
+        fy * KART_SIZE - 4,
+        10, 8
+      );
+    });
+
+    ctx.restore();
+  }
+
+  function ordinal(n) {
+    return n === 1 ? '1st' : n === 2 ? '2nd' : '3rd';
+  }
+
+  function drawHUD(ctx) {
+    const pos = getRacePosition();
+    const kmh = Math.round(player.speed * 3.6 * 0.35);
+    const itemEmoji = player.item === 'boost' ? '⚡' : player.item === 'shield' ? '🛡️' : '—';
+
+    ctx.save();
+    ctx.font = 'bold 20px system-ui';
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 4;
+    ctx.textAlign = 'left';
+    ctx.fillText(`Lap ${Math.min(player.lapCount + 1, TOTAL_LAPS)} / ${TOTAL_LAPS}`, 16, 30);
+    ctx.fillText(`${kmh} km/h`, 16, 56);
+
+    ctx.textAlign = 'right';
+    ctx.fillText(ordinal(pos), W - 16, 30);
+    ctx.font = '22px system-ui';
+    ctx.fillText(itemEmoji, W - 16, 58);
+    ctx.restore();
+  }
+
+  function drawCountdown(ctx, t) {
+    if (raceStarted) return;
+    const label = countdown > 0 ? String(countdown) : 'GO!';
+    const scale = 1 + 0.3 * ((_countdownAccum < 0.3) ? (1 - _countdownAccum / 0.3) : 0);
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.scale(scale, scale);
+    ctx.font = 'bold 100px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = countdown > 0 ? '#fbbf24' : '#4ade80';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 12;
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  }
+
+  function _kartOverlay(title, sub) {
+    const ctx = window._KQ_CTX;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(240, 160, 480, 220);
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 48px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(title, 480, 240);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '20px system-ui';
+    ctx.fillText(sub, 480, 290);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '15px system-ui';
+    ctx.fillText('Press Enter or Tap to play again', 480, 330);
+    ctx.restore();
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  let _renderTime = 0;
+
+  function render() {
+    if (!player) return;
+    const ctx = window._KQ_CTX;
+    if (!ctx) return;
+
+    _renderTime += 0.016;
+
+    drawTrack(ctx);
+    drawItemBoxes(ctx, _renderTime);
+
+    // Draw AI karts behind player
+    aiKarts.forEach(k => drawKart(ctx, k));
+    drawKart(ctx, player);
+
+    if (window._KQ_FX_DRAW) window._KQ_FX_DRAW();
+
+    drawHUD(ctx);
+
+    if (!raceStarted && !showResult) {
+      drawCountdown(ctx, _renderTime);
+    }
+
+    if (window._KQ_HINT) window._KQ_HINT.draw();
+
+    if (showResult) {
+      _kartOverlay(resultTitle, resultSub);
+    }
+  }
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+  window.KQ_KART = { init, update, render };
+
+}());
+
+
+// ── Main loop ────────────────────────────────────────────────────────────────
+const MODULE = window.KQ_KART;
+MODULE.init();
+
+let _lastTime = performance.now();
+function _loop(now){{
+  const dt = Math.min((now - _lastTime) / 1000, 0.05);
+  _lastTime = now;
+  ctx.clearRect(0,0,VIEW_W,VIEW_H);
+  if(_mode==='playing'||_mode==='gameover'||_mode==='win') MODULE.update(dt);
+  MODULE.render();
+  _drawHint();
+  requestAnimationFrame(_loop);
+}}
+requestAnimationFrame(_loop);
+</script>
+</body>
+</html>

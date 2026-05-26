@@ -300,8 +300,10 @@
         _brawlerInit();
         mode = 'playing';
       } else if (gmode === 'metroid') {
-        _metroidInit();
-        mode = 'playing';
+        _metroidInit(); mode = 'playing';
+      } else if (gmode === 'kart')   { window.KQ_KART  && KQ_KART.init();  mode = 'playing';
+      } else if (gmode === 'zelda')  { window.KQ_ZELDA && KQ_ZELDA.init(); mode = 'playing';
+      } else if (gmode === 'rpg')    { window.KQ_RPG   && KQ_RPG.init();   mode = 'playing';
       } else {
         mode = "levelselect";
       }
@@ -310,17 +312,23 @@
     if (mode === "menu") {
       _hideAllPanels();
       const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
-      if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
+      if      (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
       else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
       else if (gmode === 'metroid') { _metroidInit(); mode = 'playing'; }
+      else if (gmode === 'kart')    { window.KQ_KART  && KQ_KART.init();  mode = 'playing'; }
+      else if (gmode === 'zelda')   { window.KQ_ZELDA && KQ_ZELDA.init(); mode = 'playing'; }
+      else if (gmode === 'rpg')     { window.KQ_RPG   && KQ_RPG.init();   mode = 'playing'; }
       else { mode = "levelselect"; }
       return;
     }
     if (mode === "gameover" || mode === "win") {
       const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
-      if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
+      if      (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
       else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
       else if (gmode === 'metroid') { _metroidInit(); mode = 'playing'; }
+      else if (gmode === 'kart')    { window.KQ_KART  && KQ_KART.init();  mode = 'playing'; }
+      else if (gmode === 'zelda')   { window.KQ_ZELDA && KQ_ZELDA.init(); mode = 'playing'; }
+      else if (gmode === 'rpg')     { window.KQ_RPG   && KQ_RPG.init();   mode = 'playing'; }
       else { resetLevel(true); mode = "playing"; }
     }
   }
@@ -2503,9 +2511,12 @@
     { label: "▶ Resume",        action: () => { mode = "playing"; } },
     { label: "🔄 Restart Level", action: () => {
         const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
-        if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
+        if      (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
         else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
         else if (gmode === 'metroid') { _metroidInit(); mode = 'playing'; }
+        else if (gmode === 'kart')    { window.KQ_KART  && KQ_KART.init();  mode = 'playing'; }
+        else if (gmode === 'zelda')   { window.KQ_ZELDA && KQ_ZELDA.init(); mode = 'playing'; }
+        else if (gmode === 'rpg')     { window.KQ_RPG   && KQ_RPG.init();   mode = 'playing'; }
         else { resetLevel(true); mode = "playing"; }
       } },
     { label: "🏠 Main Menu",    action: () => { mode = "menu"; _showMenuPanel(); } },
@@ -2669,6 +2680,12 @@
         updateBrawler(dt);
       } else if (gmode === 'metroid') {
         updateMetroid(dt);
+      } else if (gmode === 'kart') {
+        window.KQ_KART && KQ_KART.update(dt);
+      } else if (gmode === 'zelda') {
+        window.KQ_ZELDA && KQ_ZELDA.update(dt);
+      } else if (gmode === 'rpg') {
+        window.KQ_RPG && KQ_RPG.update(dt);
       } else {
         updateMovingPlatforms(dt);
         updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
@@ -2713,6 +2730,25 @@
 
     if (gmode === 'metroid' && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
       renderMetroid();
+      if (mode === 'paused') drawPauseMenu();
+      drawHintPopup();
+      return;
+    }
+
+    if (gmode === 'kart' && window.KQ_KART && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
+      KQ_KART.render();
+      if (mode === 'paused') drawPauseMenu();
+      drawHintPopup();
+      return;
+    }
+    if (gmode === 'zelda' && window.KQ_ZELDA && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
+      KQ_ZELDA.render();
+      if (mode === 'paused') drawPauseMenu();
+      drawHintPopup();
+      return;
+    }
+    if (gmode === 'rpg' && window.KQ_RPG && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
+      KQ_RPG.render();
       if (mode === 'paused') drawPauseMenu();
       drawHintPopup();
       return;
@@ -3136,6 +3172,22 @@ try { localStorage.setItem('kq_settings', ${JSON.stringify(JSON.stringify(bakedS
     // Set up a blank level so the canvas has something to draw on startup
     levelIndex = 0;
     resetLevel(true);
+
+    // Expose internals for external genre modules (kart, zelda, rpg)
+    window._KQ_PRESSED     = pressed;
+    window._KQ_BEEP        = beep;
+    window._KQ_CTX         = ctx;
+    window._KQ_VIEW        = { W: VIEW_W, H: VIEW_H };
+    window._KQ_TILE        = TILE;
+    window._KQ_SETMODE     = (m) => { mode = m; };
+    window._KQ_GAME        = game;
+    window._KQ_DRAWIMG     = drawImg;
+    window._KQ_DRAWWITHTINT = drawWithTint;
+    window._KQ_FX_UPDATE   = updateEffects;
+    window._KQ_FX_DRAW     = drawEffects;
+    window._KQ_HINT        = { show: showHint, draw: drawHintPopup };
+    window._KQ_OVERLAY     = drawOverlay;
+    window._KQ_PAUSEMENU   = drawPauseMenu;
 
     requestAnimationFrame(loop);
   }
