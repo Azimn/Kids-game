@@ -2362,6 +2362,7 @@
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
     if (mode === "title") { drawTitleScreen(); drawHintPopup(); return; }
+    if (mode === "menu")  { ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,VIEW_W,VIEW_H); return; }
     if (mode === "editor") { KQ_EDITOR.render(); return; }
     if (mode === "levelselect") { drawLevelSelect(); return; }
 
