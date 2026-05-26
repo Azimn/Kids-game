@@ -305,6 +305,7 @@
     if (mode === "gameover" || mode === "win") {
       const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
       if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
+      else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
       else { resetLevel(true); mode = "playing"; }
     }
   }
@@ -1315,7 +1316,435 @@
     beep('shoot');
   }
 
-  // ── Render helpers ─────────────────────────────────────────
+  // ── Beat-em-up genre state ─────────────────────────────────
+  const brawler = {
+    playerX: 160,
+    playerY: 320,       // Y = depth lane (180 top = far, 420 bottom = near)
+    playerVx: 0, playerVy: 0,
+    playerDir: 1,       // 1=right, -1=left
+    playerAnim: 0,
+    punchTimer: 0,       // active punch hitbox timer
+    punchCooldown: 0,
+    jumpVy: 0, jumpZ: 0, onGround: true, // Z = height above ground for jump
+    lives: 3,
+    score: 0,
+    wave: 0,
+    waveTimer: 3,        // countdown before first wave
+    waveClearing: false,
+    enemies: [],
+    scrollX: 0,          // world scroll (background pans right as you progress)
+    scrollTarget: 0,
+    hurtTimer: 0,
+    invTimer: 0,
+    bossActive: false,
+    bossHp: 0, bossMaxHp: 30,
+    bossX: 700, bossY: 300,
+    bossDir: -1, bossAnim: 0,
+    bossPunchTimer: 0, bossMoveTimer: 0,
+  };
+
+  const BRAWLER_LANE_TOP    = 185;
+  const BRAWLER_LANE_BOTTOM = 410;
+  const BRAWLER_GROUND_Y    = 400; // reference ground for shadow
+  const BRAWLER_TOTAL_WAVES = 5;
+  const BRAWLER_PUNCH_REACH = 72;
+  const BRAWLER_PUNCH_W     = 60;
+  const BRAWLER_PUNCH_H     = 44;
+
+  function _brawlerInit() {
+    Object.assign(brawler, {
+      playerX: 160, playerY: 320,
+      playerVx: 0, playerVy: 0, playerDir: 1, playerAnim: 0,
+      punchTimer: 0, punchCooldown: 0,
+      jumpVy: 0, jumpZ: 0, onGround: true,
+      lives: KQ_SETTINGS.get('infiniteLives') ? 99 : KQ_SETTINGS.get('startLives'),
+      score: 0, wave: 0, waveTimer: 2.5, waveClearing: false,
+      enemies: [], scrollX: 0, scrollTarget: 0,
+      hurtTimer: 0, invTimer: 0,
+      bossActive: false, bossHp: 30,
+      bossX: 900, bossY: 300, bossDir: -1, bossAnim: 0,
+      bossPunchTimer: 0, bossMoveTimer: 1,
+    });
+    game.particles = []; game.popups = []; game.projectiles = [];
+    game.score = 0;
+    showHint('brawler', [
+      '👊 Beat-em-up mode! Punch enemies to defeat them!',
+      '',
+      'Move:  Arrow Keys / WASD      Punch: X or B button',
+      'Jump:  Space / Up             Jump-kick: Jump then Punch!',
+      '',
+      '🎨 Art tip: Your HERO is seen from the SIDE.',
+      'Draw them facing RIGHT for best results!',
+      '👾 Enemies walk toward you — stomp or punch them!',
+      '',
+      '      Tap or press any key to close this tip',
+    ]);
+  }
+
+  function _brawlerSpawnWave() {
+    const count = 2 + brawler.wave;
+    const types = ['walker', 'jumper', 'flyer'];
+    brawler.enemies = [];
+    for (let i = 0; i < count; i++) {
+      const side = Math.random() < 0.5 ? 1 : -1;
+      const type = types[Math.min(brawler.wave, 2)];
+      brawler.enemies.push({
+        x: side > 0 ? VIEW_W + 40 + i * 60 : -80 - i * 60,
+        y: BRAWLER_LANE_TOP + Math.random() * (BRAWLER_LANE_BOTTOM - BRAWLER_LANE_TOP - 50),
+        w: 44, h: 50,
+        hp: type === 'flyer' ? 2 : 1,
+        alive: true, dir: -side,
+        vx: 0, jumpZ: 0, jumpVy: 0, onGround: true,
+        hurtTimer: 0, attackTimer: 1.5 + Math.random() * 2,
+        type,
+      });
+    }
+  }
+
+  function updateBrawler(dt) {
+    brawler.playerAnim += dt;
+    brawler.punchTimer    = Math.max(0, brawler.punchTimer    - dt);
+    brawler.punchCooldown = Math.max(0, brawler.punchCooldown - dt);
+    brawler.hurtTimer     = Math.max(0, brawler.hurtTimer     - dt);
+    brawler.invTimer      = Math.max(0, brawler.invTimer      - dt);
+
+    // Wave spawn countdown
+    if (brawler.waveTimer > 0) {
+      brawler.waveTimer -= dt;
+      if (brawler.waveTimer <= 0 && !brawler.bossActive) _brawlerSpawnWave();
+    }
+
+    // Player movement
+    const spd = 220 * KQ_SETTINGS.get('speedMult');
+    let mvx = 0, mvy = 0;
+    if (pressed('left'))  { mvx = -spd; brawler.playerDir = -1; }
+    if (pressed('right')) { mvx =  spd; brawler.playerDir =  1; }
+    if (pressed('jump') && !brawler._jumpHeld) {
+      if (brawler.onGround) { brawler.jumpVy = -520 * KQ_SETTINGS.get('jumpMult'); brawler.onGround = false; beep('jump'); }
+      brawler._jumpHeld = true;
+    }
+    if (!pressed('jump')) brawler._jumpHeld = false;
+
+    // Lane (depth) movement — up/down moves into/out of the screen
+    if (pressed('up') && !pressed('jump'))   mvy = -spd * 0.55;
+    if (pressed('down')) mvy =  spd * 0.55;
+
+    brawler.playerX += mvx * dt;
+    brawler.playerY += mvy * dt;
+
+    // Jump physics (Z axis)
+    if (!brawler.onGround) {
+      brawler.jumpVy += 1400 * dt;
+      brawler.jumpZ  += brawler.jumpVy * dt;
+      if (brawler.jumpZ >= 0) { brawler.jumpZ = 0; brawler.jumpVy = 0; brawler.onGround = true; }
+    }
+
+    // Clamp to arena
+    brawler.playerX = Math.max(40, Math.min(VIEW_W - 80, brawler.playerX));
+    brawler.playerY = Math.max(BRAWLER_LANE_TOP + 20, Math.min(BRAWLER_LANE_BOTTOM - 10, brawler.playerY));
+
+    // Punch
+    if ((pressed('shoot') || pressed('dash')) && brawler.punchCooldown <= 0) {
+      brawler.punchTimer    = 0.18;
+      brawler.punchCooldown = 0.38;
+      beep('shoot');
+    }
+
+    // Punch hitbox check
+    if (brawler.punchTimer > 0) {
+      const phx = brawler.playerX + (brawler.playerDir > 0 ? 36 : -BRAWLER_PUNCH_W - 10);
+      const phy = brawler.playerY + brawler.jumpZ - BRAWLER_PUNCH_H / 2;
+      for (const e of brawler.enemies) {
+        if (!e.alive) continue;
+        if (_brawlerOverlap(phx, phy, BRAWLER_PUNCH_W, BRAWLER_PUNCH_H, e.x, e.y + e.jumpZ, e.w, e.h)) {
+          e.hp--;
+          e.hurtTimer = 0.25;
+          _spawnParticles(e.x + e.w/2, e.y + e.jumpZ, '#ef4444', 4);
+          beep('stomp');
+          if (e.hp <= 0) {
+            e.alive = false;
+            brawler.score += 200;
+            game.score = brawler.score;
+            game.popups.push({ text: '+200', x: e.x + e.w/2, y: e.y, life: 0.8 });
+          }
+        }
+      }
+      // Boss punch
+      if (brawler.bossActive && brawler.bossHp > 0) {
+        if (_brawlerOverlap(phx, phy, BRAWLER_PUNCH_W, BRAWLER_PUNCH_H,
+            brawler.bossX, brawler.bossY, 64, 72)) {
+          brawler.bossHp--;
+          screenShake = 5;
+          _spawnParticles(brawler.bossX + 32, brawler.bossY + 36, '#f97316', 6);
+          beep('hurt');
+          if (brawler.bossHp <= 0) {
+            brawler.bossActive = false;
+            mode = 'win'; beep('win');
+            _spawnParticles(brawler.bossX + 32, brawler.bossY + 36, '#fbbf24', 20);
+          }
+        }
+      }
+    }
+
+    // Update enemies
+    for (const e of brawler.enemies) {
+      if (!e.alive) continue;
+      e.hurtTimer = Math.max(0, e.hurtTimer - dt);
+      e.attackTimer -= dt;
+
+      // Move toward player
+      const tx = brawler.playerX - e.w/2 - (e.w/2);
+      const ty = brawler.playerY - e.h/2;
+      const dx = tx - e.x, dy = ty - e.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      const espd = G_ENEMY() * 1.2;
+      if (dist > 8) {
+        e.x += (dx/dist) * espd * dt;
+        e.y += (dy/dist) * espd * 0.6 * dt;
+        e.dir = dx > 0 ? 1 : -1;
+      }
+
+      // Jumper type: occasional jump
+      if (e.type === 'jumper' && e.onGround && Math.random() < dt * 1.2) {
+        e.jumpVy = -400; e.onGround = false;
+      }
+      if (e.jumpVy !== 0 || !e.onGround) {
+        e.jumpVy = (e.jumpVy || 0) + 1200 * dt;
+        e.jumpZ  = (e.jumpZ  || 0) + e.jumpVy * dt;
+        if (e.jumpZ >= 0) { e.jumpZ = 0; e.jumpVy = 0; e.onGround = true; }
+      }
+
+      // Clamp to arena
+      e.y = Math.max(BRAWLER_LANE_TOP, Math.min(BRAWLER_LANE_BOTTOM - e.h, e.y));
+
+      // Enemy attacks player
+      if (e.attackTimer <= 0 && brawler.invTimer <= 0 && !KQ_SETTINGS.get('invincibleMode')) {
+        if (dist < 55) {
+          e.attackTimer = 1.2 + Math.random();
+          brawler.hurtTimer = 0.3;
+          brawler.invTimer  = 1.2;
+          brawler.lives--;
+          screenShake = 8;
+          beep('hurt');
+          if (brawler.lives <= 0) mode = 'gameover';
+        } else {
+          e.attackTimer = 0.3;
+        }
+      }
+    }
+
+    // Boss AI
+    if (brawler.bossActive && brawler.bossHp > 0) {
+      brawler.bossMoveTimer -= dt;
+      brawler.bossPunchTimer -= dt;
+      const bspd = 110 * KQ_SETTINGS.get('enemySpeedMult');
+      const bdx = brawler.playerX - brawler.bossX;
+      const bdy = brawler.playerY - brawler.bossY;
+      const bdist = Math.sqrt(bdx*bdx + bdy*bdy) || 1;
+      brawler.bossDir = bdx > 0 ? 1 : -1;
+      brawler.bossAnim += dt;
+
+      if (brawler.bossMoveTimer <= 0 && bdist > 70) {
+        brawler.bossX += (bdx/bdist) * bspd * dt;
+        brawler.bossY += (bdy/bdist) * bspd * 0.6 * dt;
+        brawler.bossY = Math.max(BRAWLER_LANE_TOP, Math.min(BRAWLER_LANE_BOTTOM - 72, brawler.bossY));
+      }
+      if (brawler.bossMoveTimer <= -1.5) brawler.bossMoveTimer = 0.8 + Math.random();
+
+      if (brawler.bossPunchTimer <= 0 && bdist < 80 && brawler.invTimer <= 0 && !KQ_SETTINGS.get('invincibleMode')) {
+        brawler.bossPunchTimer = 1.4;
+        brawler.invTimer = 1.0;
+        brawler.hurtTimer = 0.3;
+        brawler.lives--;
+        screenShake = 10;
+        beep('hurt');
+        if (brawler.lives <= 0) mode = 'gameover';
+      }
+    }
+
+    // Scroll world right as you clear the screen
+    brawler.scrollX += (brawler.scrollTarget - brawler.scrollX) * Math.min(1, dt * 3);
+
+    // Wave clear check
+    const alive = brawler.enemies.filter(e => e.alive);
+    if (!brawler.waveClearing && brawler.waveTimer <= 0 && alive.length === 0 && !brawler.bossActive) {
+      brawler.waveClearing = true;
+      brawler.wave++;
+      brawler.scrollTarget += 200;
+      if (brawler.wave >= BRAWLER_TOTAL_WAVES) {
+        // Spawn boss
+        brawler.bossActive = true;
+        brawler.bossHp = brawler.bossMaxHp;
+        brawler.bossX = VIEW_W + 40;
+        brawler.bossY = 300;
+        brawler.waveClearing = false;
+      } else {
+        setTimeout(() => {
+          brawler.waveTimer = 2.5;
+          brawler.waveClearing = false;
+        }, 1200);
+      }
+    }
+
+    updateEffects(dt);
+  }
+
+  function _brawlerOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
+  }
+
+  function renderBrawler() {
+    const ASSETS = window.KQ_ASSETS || {};
+
+    // Scrolling background
+    const bgDrawn = drawImg((ASSETS.backgrounds||{}).bg_meadow, -brawler.scrollX % VIEW_W, 0, VIEW_W, VIEW_H);
+    if (!bgDrawn) {
+      // Painted city/street fallback
+      const sky = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+      sky.addColorStop(0, '#1e1b4b'); sky.addColorStop(0.55, '#312e81'); sky.addColorStop(1, '#1e1b4b');
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      // Ground
+      ctx.fillStyle = '#374151'; ctx.fillRect(0, BRAWLER_LANE_BOTTOM - 20, VIEW_W, VIEW_H);
+      ctx.fillStyle = '#4b5563'; ctx.fillRect(0, BRAWLER_LANE_BOTTOM - 22, VIEW_W, 4);
+      // Background "buildings"
+      const bldOffset = brawler.scrollX * 0.3;
+      for (let i = 0; i < 8; i++) {
+        const bx = ((i * 140 - bldOffset) % (VIEW_W + 140) + VIEW_W + 140) % (VIEW_W + 140) - 140;
+        const bh = 80 + (i % 3) * 40;
+        ctx.fillStyle = `hsl(${220 + i*8},30%,${14 + i%3*4}%)`;
+        ctx.fillRect(bx, BRAWLER_LANE_TOP - bh, 120, bh);
+        // windows
+        ctx.fillStyle = `rgba(251,191,36,0.${Math.floor(game.time * 2 + i) % 4 > 1 ? 5 : 2})`;
+        for (let wy = 0; wy < 3; wy++)
+          for (let wx = 0; wx < 3; wx++)
+            ctx.fillRect(bx + 14 + wx*32, BRAWLER_LANE_TOP - bh + 16 + wy*22, 16, 12);
+      }
+    }
+
+    // Lane lines (depth guide)
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, BRAWLER_LANE_TOP); ctx.lineTo(VIEW_W, BRAWLER_LANE_TOP); ctx.stroke();
+
+    // Sort by Y for depth order (back-to-front)
+    const drawables = [];
+    if (brawler.bossActive && brawler.bossHp > 0)
+      drawables.push({ type: 'boss', sortY: brawler.bossY + 72 });
+    for (const e of brawler.enemies) {
+      if (e.alive) drawables.push({ type: 'enemy', e, sortY: e.y + e.h + (e.jumpZ||0) });
+    }
+    drawables.push({ type: 'player', sortY: brawler.playerY + 50 + brawler.jumpZ });
+    drawables.sort((a, b) => a.sortY - b.sortY);
+
+    for (const d of drawables) {
+      if (d.type === 'player') {
+        const px = brawler.playerX;
+        const py = brawler.playerY + brawler.jumpZ;
+        const flip = brawler.playerDir < 0;
+        const pw = 40, ph = 52;
+
+        // Shadow
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.ellipse(px, brawler.playerY + 2, 20, 7, 0, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = brawler.invTimer > 0 && Math.floor(game.time * 12) % 2 ? 0.4 : 1;
+
+        const pTint = KQ_SETTINGS.get('tintPlayer');
+        let frame = (ASSETS.player||{}).idle;
+        if (brawler.punchTimer > 0) frame = (ASSETS.player||{}).hurt;
+        else if (!brawler.onGround) frame = (ASSETS.player||{}).jump;
+        else if (brawler.playerVx !== 0 || pressed('left') || pressed('right'))
+          frame = Math.floor(brawler.playerAnim * 8) % 2 === 0 ? (ASSETS.player||{}).run1 : (ASSETS.player||{}).run2;
+
+        drawWithTint(pTint, px - pw/2, py - ph, pw, ph, () => {
+          if (!drawImg(frame, px - pw/2, py - ph, pw, ph, { flip })) {
+            ctx.fillStyle = '#2563eb'; ctx.fillRect(px - pw/2, py - ph, pw, ph);
+            ctx.fillStyle = '#fff'; ctx.fillRect(px + (flip ? -4 : 14), py - ph + 12, 8, 8);
+          }
+        });
+
+        // Punch flash
+        if (brawler.punchTimer > 0) {
+          const fx = px + (flip ? -BRAWLER_PUNCH_REACH - 10 : 16);
+          ctx.globalAlpha = 0.7; ctx.fillStyle = '#fbbf24';
+          ctx.beginPath(); ctx.arc(fx, py - ph/2, 18, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
+          ctx.fillText('POW!', fx, py - ph/2 + 5);
+        }
+        ctx.globalAlpha = 1;
+
+      } else if (d.type === 'enemy') {
+        const e = d.e;
+        const ex = e.x, ey = e.y + (e.jumpZ||0);
+        const tint = e.type === 'flyer' ? KQ_SETTINGS.get('tintFlyer')
+                   : e.type === 'jumper' ? KQ_SETTINGS.get('tintJumper')
+                   : KQ_SETTINGS.get('tintWalker');
+        const colors = { walker: '#fb923c', jumper: '#f97316', flyer: '#c084fc' };
+
+        // Shadow
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.ellipse(ex + e.w/2, e.y + e.h + 2, e.w/2, 6, 0, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = e.hurtTimer > 0 ? 0.5 : 1;
+
+        const assetKey = (ASSETS.enemies||{})[e.type];
+        drawWithTint(tint, ex, ey - e.h/2, e.w, e.h, () => {
+          if (!drawImg(assetKey, ex, ey - e.h/2, e.w, e.h, { flip: e.dir < 0 })) {
+            ctx.fillStyle = colors[e.type] || '#fb923c';
+            ctx.fillRect(ex, ey - e.h/2, e.w, e.h);
+            ctx.fillStyle = '#111'; ctx.fillRect(ex + (e.dir > 0 ? 24 : 8), ey - e.h/2 + 12, 7, 7);
+          }
+        });
+        ctx.globalAlpha = 1;
+
+      } else if (d.type === 'boss') {
+        const bw = 64, bh = 72;
+        const bx = brawler.bossX, by = brawler.bossY;
+        ctx.globalAlpha = 0.25; ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.ellipse(bx + bw/2, by + bh + 2, bw/2, 8, 0, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+
+        if (!drawImg((ASSETS.enemies||{}).walker, bx, by, bw, bh, { flip: brawler.bossDir < 0 })) {
+          ctx.fillStyle = '#dc2626'; ctx.fillRect(bx, by, bw, bh);
+          ctx.fillStyle = '#111';
+          ctx.fillRect(bx + (brawler.bossDir > 0 ? 38 : 12), by + 16, 10, 10);
+          // Crown
+          ctx.fillStyle = '#fbbf24';
+          ctx.fillRect(bx + 10, by - 10, 44, 12);
+          ctx.fillRect(bx + 14, by - 20, 10, 12);
+          ctx.fillRect(bx + 30, by - 20, 10, 12);
+          ctx.fillRect(bx + 46, by - 18, 8, 10);
+        }
+        // Boss HP bar
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(VIEW_W/2-120, 14, 240, 18);
+        const pct = brawler.bossHp / brawler.bossMaxHp;
+        ctx.fillStyle = `hsl(${pct*120},80%,45%)`; ctx.fillRect(VIEW_W/2-118, 16, 236*pct, 14);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'center';
+        ctx.fillText('👊 BOSS', VIEW_W/2, 27);
+      }
+    }
+
+    drawEffects();
+
+    // Wave announcement
+    if (brawler.waveTimer > 0 && brawler.wave < BRAWLER_TOTAL_WAVES) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, brawler.waveTimer);
+      ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 36px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(`Wave ${brawler.wave + 1}!`, VIEW_W/2, VIEW_H/2 - 20);
+      ctx.font = '18px system-ui'; ctx.fillStyle = '#e2e8f0';
+      ctx.fillText('Get ready…', VIEW_W/2, VIEW_H/2 + 16);
+      ctx.restore();
+    }
+
+    // HUD
+    ctx.textAlign = 'left'; ctx.font = 'bold 18px system-ui';
+    ctx.fillStyle = '#fbbf24'; ctx.fillText(`⭐ ${brawler.score}`, 16, 28);
+    ctx.fillStyle = '#ef4444'; ctx.fillText(`❤️ ${brawler.lives}`, 16, 52);
+    ctx.fillStyle = '#94a3b8'; ctx.font = '13px system-ui'; ctx.textAlign = 'right';
+    ctx.fillText(`Wave ${Math.min(brawler.wave+1, BRAWLER_TOTAL_WAVES+1)} / ${BRAWLER_TOTAL_WAVES+1}`, VIEW_W - 16, 28);
+
+    if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${brawler.score}`, 'Press Enter or Tap to Try Again');
+    if (mode === 'win')      drawOverlay('You Win! 🎉', `Score: ${brawler.score}`, 'Press Enter or Tap to Play Again');
+  }
   function drawBackground() {
     const ASSETS = window.KQ_ASSETS || {};
     const bgKey  = currentLevel && currentLevel.bgKey;
@@ -1909,6 +2338,8 @@
     if (mode === "playing") {
       if (gmode === 'shooter') {
         updateShooter(dt);
+      } else if (gmode === 'brawler') {
+        updateBrawler(dt);
       } else {
         updateMovingPlatforms(dt);
         updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
@@ -1938,6 +2369,13 @@
 
     if (gmode === 'shooter' && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
       renderShooter();
+      if (mode === 'paused') drawPauseMenu();
+      drawHintPopup();
+      return;
+    }
+
+    if (gmode === 'brawler' && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
+      renderBrawler();
       if (mode === 'paused') drawPauseMenu();
       drawHintPopup();
       return;
@@ -2030,12 +2468,11 @@
       ensureAudio(); beep('menu');
       const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
       if (gmode === 'shooter') {
-        _shooterInit();
-        mode = 'playing';
-        _hideAllPanels();
+        _shooterInit(); mode = 'playing'; _hideAllPanels();
+      } else if (gmode === 'brawler') {
+        _brawlerInit(); mode = 'playing'; _hideAllPanels();
       } else {
-        mode = 'levelselect';
-        _hideAllPanels();
+        mode = 'levelselect'; _hideAllPanels();
       }
     });
 

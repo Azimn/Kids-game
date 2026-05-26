@@ -25,7 +25,7 @@ const DEFAULT_SETTINGS = {
   sfxVolume:        0.7,
 
   // Game genre/mode
-  gameMode:         'platformer',  // platformer | shooter
+  gameMode:         'platformer',  // platformer | shooter | brawler
 
   // Author / publisher
   authorName:       '',
