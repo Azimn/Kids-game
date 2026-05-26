@@ -305,8 +305,11 @@
       return;
     }
     if (mode === "menu") {
-      mode = "title";
       _hideAllPanels();
+      const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
+      if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
+      else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
+      else { mode = "levelselect"; }
       return;
     }
     if (mode === "gameover" || mode === "win") {
@@ -2187,7 +2190,12 @@
   // ── Pause menu (card with buttons) ────────────────────────
   const PAUSE_BTNS = [
     { label: "▶ Resume",        action: () => { mode = "playing"; } },
-    { label: "🔄 Restart Level", action: () => { resetLevel(true); mode = "playing"; } },
+    { label: "🔄 Restart Level", action: () => {
+        const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
+        if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
+        else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
+        else { resetLevel(true); mode = "playing"; }
+      } },
     { label: "🏠 Main Menu",    action: () => { mode = "menu"; _showMenuPanel(); } },
   ];
   const PAUSE_CARD = { x: 330, y: 160, w: 300, h: 220 };
