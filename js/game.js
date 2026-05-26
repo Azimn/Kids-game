@@ -1154,9 +1154,9 @@
           shooter.bossHp--;
           screenShake = 6;
           beep('hurt');
-          _spawnParticles(shooter.bossX + 50, shooter.bossY + 40, '#f97316', 6);
+          spawnParticles(shooter.bossX + 50, shooter.bossY + 40, '#f97316', 6);
           if (shooter.bossHp <= 0) {
-            _spawnParticles(shooter.bossX + 50, shooter.bossY + 40, '#fbbf24', 20);
+            spawnParticles(shooter.bossX + 50, shooter.bossY + 40, '#fbbf24', 20);
             shooter.bossActive = false;
             mode = 'win';
             beep('win');
@@ -1172,7 +1172,7 @@
           shooter.score += 100;
           game.score = shooter.score;
           beep('stomp');
-          _spawnParticles(e.x + e.w/2, e.y + e.h/2, '#f97316', 5);
+          spawnParticles(e.x + e.w/2, e.y + e.h/2, '#f97316', 5);
           game.popups.push({ text: '+100', x: e.x + e.w/2, y: e.y, life: 0.8 });
         }
       }
@@ -1193,7 +1193,7 @@
           shooter.lives--;
           screenShake = 10;
           beep('hurt');
-          _spawnParticles(shooter.playerX, VIEW_H - SHOOTER_SHIP_H - 16, '#ef4444', 8);
+          spawnParticles(shooter.playerX, VIEW_H - SHOOTER_SHIP_H - 16, '#ef4444', 8);
           if (shooter.lives <= 0) { mode = 'gameover'; }
         }
       }
@@ -1459,7 +1459,7 @@
         if (_brawlerOverlap(phx, phy, BRAWLER_PUNCH_W, BRAWLER_PUNCH_H, e.x, e.y + e.jumpZ, e.w, e.h)) {
           e.hp--;
           e.hurtTimer = 0.25;
-          _spawnParticles(e.x + e.w/2, e.y + e.jumpZ, '#ef4444', 4);
+          spawnParticles(e.x + e.w/2, e.y + e.jumpZ, '#ef4444', 4);
           beep('stomp');
           if (e.hp <= 0) {
             e.alive = false;
@@ -1475,12 +1475,12 @@
             brawler.bossX, brawler.bossY, 64, 72)) {
           brawler.bossHp--;
           screenShake = 5;
-          _spawnParticles(brawler.bossX + 32, brawler.bossY + 36, '#f97316', 6);
+          spawnParticles(brawler.bossX + 32, brawler.bossY + 36, '#f97316', 6);
           beep('hurt');
           if (brawler.bossHp <= 0) {
             brawler.bossActive = false;
             mode = 'win'; beep('win');
-            _spawnParticles(brawler.bossX + 32, brawler.bossY + 36, '#fbbf24', 20);
+            spawnParticles(brawler.bossX + 32, brawler.bossY + 36, '#fbbf24', 20);
           }
         }
       }
