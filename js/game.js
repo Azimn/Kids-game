@@ -2682,9 +2682,10 @@
       }
 
       const authorName = KQ_SETTINGS.get('authorName') || '';
+      const bakedSettings = KQ_SETTINGS.getAll();
 
       // Build a self-contained index.html with all JS inlined
-      const html = _buildExportHTML(fetched, artOverrides, authorName);
+      const html = _buildExportHTML(fetched, artOverrides, authorName, bakedSettings);
       const blob = new Blob([html], { type: 'text/html' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -2708,9 +2709,10 @@
     }
   }
 
-  function _buildExportHTML(files, artOverrides, authorName) {
+  function _buildExportHTML(files, artOverrides, authorName, bakedSettings) {
     artOverrides = artOverrides || {};
     authorName = authorName || '';
+    bakedSettings = bakedSettings || {};
     const title = authorName ? `My Game by ${authorName}` : 'My Game';
     const madeByHTML = authorName
       ? `<p style="text-align:center;color:#94a3b8;font-size:13px;margin:6px 0 0">Made by <strong style="color:#fbbf24">${authorName}</strong> 🎮</p>`
@@ -2785,7 +2787,9 @@ const _bakedArt = ${JSON.stringify(artOverrides)};
 for (const [k, v] of Object.entries(_bakedArt)) {
   try { localStorage.setItem('kq_art_v1_' + k, v); } catch(e) {}
 }
-  </script>
+// Baked-in settings (genre, physics, tints) — must run before settings.js loads
+try { localStorage.setItem('kq_settings', ${JSON.stringify(JSON.stringify(bakedSettings))}); } catch(e) {}
+</script>
   <script>${files['js/settings.js']}</script>
   <script>${files['js/gamepad.js']}</script>
   <script>${files['js/artmanager.js']}</script>
