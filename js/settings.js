@@ -23,6 +23,9 @@ const DEFAULT_SETTINGS = {
 
   // Volume (0–1)
   sfxVolume:        0.7,
+
+  // Author / publisher
+  authorName:       '',
 };
 
 const KQ_SETTINGS = (() => {

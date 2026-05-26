@@ -33,10 +33,28 @@ const KQ_EDITOR = (() => {
   const TILE_LABELS = {
     'X': 'Ground',
     '?': 'Question',
-    'B': 'Breakable',
-    'S': 'Spike',
-    'F': 'Finish Flag',
-    '.': 'Erase tile',
+    'B': 'Smash',
+    'S': 'Danger',
+    'F': 'Finish',
+    '.': 'Erase',
+  };
+
+  const TILE_EMOJI = {
+    'X': '🟫',
+    '?': '❓',
+    'B': '💥',
+    'S': '⚠️',
+    'F': '🏁',
+    '.': '✖️',
+  };
+
+  const TILE_TIPS = {
+    'X': 'This is the GROUND block! Draw your floor with this 🏔️',
+    '?': 'Mystery Block! Hit it from below to get coins! 🪙',
+    'B': 'Smash Block! Break it with the Giant power-up! 💥',
+    'S': 'Danger Spike! Don\'t touch this one! ⚠️',
+    'F': 'Finish Flag! Reach here to WIN the level! 🎉',
+    '.': 'Eraser! Click tiles to remove them! 🧹',
   };
 
   const TILE_COLORS = {
@@ -417,12 +435,19 @@ const KQ_EDITOR = (() => {
 
       <div class="ed-section">
         <label class="ed-label">Tiles</label>
-        <div class="ed-palette" id="ed-tiles">
+        <div class="ed-palette" id="ed-tiles" style="display:flex;flex-wrap:wrap;gap:6px">
           ${Object.entries(TILE_LABELS).map(([ch, lbl]) =>
-            `<button class="ed-swatch ed-tile" data-ch="${ch}" title="${lbl}"
-              style="background:${TILE_COLORS[ch] || '#334155'}">${ch === '.' ? '✖' : ch}</button>`
+            `<button class="ed-swatch ed-tile ed-swatch-big" data-ch="${ch}" title="${TILE_TIPS[ch] || lbl}"
+              style="background:${TILE_COLORS[ch] || '#334155'};width:54px;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:22px;line-height:1;border-radius:8px;cursor:pointer;border:2px solid rgba(255,255,255,0.2)">
+              <span style="font-size:22px">${TILE_EMOJI[ch] || ch}</span>
+              <span style="font-size:9px;color:#fff;margin-top:2px;font-weight:bold">${lbl}</span>
+            </button>`
           ).join('')}
-          <button class="ed-swatch ed-fill-btn" id="ed-fill" title="Paint Bucket / Flood Fill" style="background:#0ea5e9">🪣</button>
+          <button class="ed-swatch ed-fill-btn" id="ed-fill" title="Paint Bucket / Flood Fill"
+            style="background:#0ea5e9;width:54px;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;border:2px solid rgba(255,255,255,0.2)">
+            <span style="font-size:22px">🪣</span>
+            <span style="font-size:9px;color:#fff;margin-top:2px;font-weight:bold">Fill</span>
+          </button>
         </div>
       </div>
 
@@ -489,6 +514,14 @@ const KQ_EDITOR = (() => {
 
       <div id="ed-msg" class="ed-msg"></div>
     `;
+
+    // Tile swatch hover tooltips
+    panel.querySelectorAll('.ed-tile').forEach(btn => {
+      btn.addEventListener('mouseenter', () => {
+        const ch = btn.dataset.ch;
+        _showMsg(TILE_TIPS[ch] || TILE_LABELS[ch] || ch, 4000);
+      });
+    });
 
     // Tile swatches
     panel.querySelectorAll('.ed-tile').forEach(btn => {

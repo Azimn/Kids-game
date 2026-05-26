@@ -62,6 +62,11 @@
   let movingPlatforms = [];
   let currentLevel = null;
 
+  // ── Boss state ─────────────────────────────────────────────
+  let boss = null; // { x, y, w, h, hp, maxHp, vx, shootTimer, alive, anim }
+  let bossSpawned = false;
+  let bossDefeated = false;
+
   // ── Helpers ────────────────────────────────────────────────
   function makePlayer() {
     return {
@@ -269,6 +274,11 @@
       ox: p.x, oy: p.y,   // origin
       t: 0                  // phase timer
     }));
+
+    // Boss reset
+    boss = null;
+    bossSpawned = false;
+    bossDefeated = false;
 
     game.particles.length = 0;
     game.popups.length    = 0;
@@ -599,6 +609,27 @@
         beep("stomp");
       } else { hurtPlayer(); }
     }
+
+    // Boss collision
+    if (boss && boss.alive && rectsOverlap(player, boss)) {
+      const stomp = player.vy > 160 && player.y + player.h < boss.y + boss.h * 0.45;
+      if (stomp) {
+        boss.hp--;
+        player.vy = -G_JUMP() * 0.6;
+        screenShake = 10;
+        spawnParticles(boss.x + boss.w/2, boss.y + boss.h/2, "#dc2626", 16);
+        beep("stomp");
+        if (boss.hp <= 0) _defeatBoss();
+      } else {
+        hurtPlayer();
+      }
+    }
+    // Boss projectile collision
+    for (const p of game.projectiles) {
+      if (p._bossShot && rectsOverlap(player, p)) {
+        p.life = 0; hurtPlayer();
+      }
+    }
   }
 
   function updateEnemies(dt) {
@@ -674,9 +705,12 @@
 
   function updateProjectiles(dt) {
     for (const p of game.projectiles) {
-      p.x += p.vx * dt; p.life -= dt;
+      p.x += p.vx * dt;
+      if (p.vy !== undefined) p.y += p.vy * dt;
+      p.life -= dt;
       let hitTile = false;
-      queryTiles(p, (ch, tx, ty, r) => {
+      if (p._bossShot) { /* boss shots pass through tiles */ }
+      else queryTiles(p, (ch, tx, ty, r) => {
         if (!isSolid(ch) || !rectsOverlap(p, r)) return;
         hitTile = true;
         if (ch === "B") {
@@ -694,8 +728,144 @@
           beep("stomp");
         }
       }
+      // Player projectile hits boss
+      if (!p._bossShot && boss && boss.alive && rectsOverlap(p, boss)) {
+        p.life = 0;
+        boss.hp--;
+        screenShake = 8;
+        spawnParticles(boss.x + boss.w/2, boss.y + boss.h/2, "#dc2626", 14);
+        beep("stomp");
+        if (boss.hp <= 0) _defeatBoss();
+      }
     }
     game.projectiles = game.projectiles.filter(p => p.life > 0);
+  }
+
+  // ── Boss ───────────────────────────────────────────────────
+  function _spawnBoss() {
+    if (bossSpawned) return;
+    bossSpawned = true;
+    boss = {
+      x: game.worldWidth - 14 * 48,
+      y: game.worldHeight - 12 * 48 + 48, // near floor
+      w: 80, h: 80,
+      hp: 5, maxHp: 5,
+      vx: -200,
+      shootTimer: 3,
+      alive: true,
+      anim: 0
+    };
+    spawnPopup(boss.x, boss.y - 40, "BOSS!");
+    screenShake = 20;
+    beep("power");
+  }
+
+  function _defeatBoss() {
+    boss.alive = false;
+    bossDefeated = true;
+    game.score += 2000;
+    spawnPopup(boss.x + boss.w/2 - 30, boss.y - 30, "+2000");
+    spawnParticles(boss.x + boss.w/2, boss.y + boss.h/2, "#dc2626", 40);
+    spawnParticles(boss.x + boss.w/2, boss.y + boss.h/2, "#fbbf24", 40);
+    screenShake = 24;
+    beep("win");
+    // The flag tile is dynamically placed for level 3
+    setTimeout(() => {
+      if (currentLevel && currentLevel.id === 3) {
+        // Find the F tile position from the map and ensure it triggers win
+        // Place flag at near-boss location dynamically
+        const flagCol = Math.floor((game.worldWidth - 3 * 48) / 48);
+        const flagRow = 6; // same row as existing F in the level
+        setTile(flagCol, flagRow, 'F');
+        spawnPopup(flagCol * 48, flagRow * 48 - 30, "EXIT OPEN!");
+      }
+    }, 800);
+  }
+
+  function updateBoss(dt) {
+    if (!boss || !boss.alive) return;
+    boss.anim += dt;
+
+    // Spawn trigger: player crosses threshold
+    if (!bossSpawned) return; // won't reach here, but guard
+
+    // Charge left/right
+    boss.x += boss.vx * dt;
+    // Bounce off walls
+    if (boss.x <= game.worldWidth - 20 * 48) { boss.x = game.worldWidth - 20 * 48; boss.vx = 200; }
+    if (boss.x + boss.w >= game.worldWidth - 1 * 48) { boss.x = game.worldWidth - 1 * 48 - boss.w; boss.vx = -200; }
+
+    // Gravity — keep boss on floor
+    boss.y += 800 * dt;
+    const floorY = game.worldHeight - 5 * 48 - boss.h;
+    // Find ground below boss using tile check
+    const bCol = Math.floor((boss.x + boss.w/2) / 48);
+    let groundY = game.worldHeight - boss.h;
+    for (let tr = Math.floor(boss.y / 48); tr < map.length; tr++) {
+      if (isSolid(tileAt(bCol, tr))) { groundY = tr * 48 - boss.h; break; }
+    }
+    if (boss.y >= groundY) boss.y = groundY;
+
+    // Shoot toward player every 3 seconds
+    boss.shootTimer -= dt;
+    if (boss.shootTimer <= 0) {
+      boss.shootTimer = 3;
+      const dx = (player.x + player.w/2) - (boss.x + boss.w/2);
+      const dy = (player.y + player.h/2) - (boss.y + boss.h/2);
+      const len = Math.sqrt(dx*dx + dy*dy) || 1;
+      const spd = 180;
+      for (let i = -1; i <= 1; i += 2) {
+        game.projectiles.push({
+          x: boss.x + boss.w/2 - 8,
+          y: boss.y + boss.h/2 - 6,
+          w: 18, h: 14,
+          vx: (dx/len) * spd + i * 40,
+          vy: (dy/len) * spd,
+          life: 4,
+          _bossShot: true
+        });
+      }
+      beep("shoot");
+    }
+  }
+
+  function drawBoss() {
+    if (!boss || !boss.alive) return;
+    const bx = boss.x - cameraX;
+    // Body
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(bx, boss.y, boss.w, boss.h);
+    // Eyes
+    const eyeOff = Math.sin(boss.anim * 4) * 3;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(bx + 14, boss.y + 18 + eyeOff, 14, 14);
+    ctx.fillRect(bx + 52, boss.y + 18 + eyeOff, 14, 14);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(bx + 18, boss.y + 22 + eyeOff, 8, 8);
+    ctx.fillRect(bx + 56, boss.y + 22 + eyeOff, 8, 8);
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('BOSS', bx + boss.w/2, boss.y + boss.h - 8);
+    ctx.textAlign = 'left';
+
+    // Boss health bar (at top-center of screen)
+    ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+    const barW = 300, barH = 22;
+    const barX = VIEW_W/2 - barW/2;
+    const barY = 64;
+    ctx.fillStyle = 'rgba(15,23,42,0.85)';
+    _roundRect(barX - 8, barY - 6, barW + 16, barH + 20, 8); ctx.fill();
+    ctx.fillStyle = '#374151';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(barX, barY, barW * (boss.hp / boss.maxHp), barH);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('👾 BOSS  ' + '❤️'.repeat(boss.hp) + '🖤'.repeat(boss.maxHp - boss.hp), VIEW_W/2, barY + 16);
+    ctx.restore();
   }
 
   function updateEffects(dt) {
@@ -921,7 +1091,12 @@
   function drawProjectiles() {
     const ASSETS = window.KQ_ASSETS || {};
     for (const p of game.projectiles) {
-      if (!drawImg(ASSETS.projectile, p.x, p.y, p.w, p.h, { flip: p.dir < 0 })) {
+      if (p._bossShot) {
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(p.x + p.w/2, p.y + p.h/2, p.w/2, 0, Math.PI*2);
+        ctx.fill();
+      } else if (!drawImg(ASSETS.projectile, p.x, p.y, p.w, p.h, { flip: p.dir < 0 })) {
         ctx.fillStyle = "#38bdf8"; ctx.fillRect(p.x, p.y, p.w, p.h);
       }
     }
@@ -1026,6 +1201,11 @@
     ctx.fillStyle = "#cbd5e1"; ctx.font = "16px system-ui, sans-serif";
     ctx.fillText("Move: Arrows/WASD  Jump: Space  Shoot: X  Dash: Shift  Pause: P  Restart: R", VIEW_W/2, 378);
     ctx.fillText("Swap PNG files in assets/art/ to make the game your own!", VIEW_W/2, 410);
+    const authorDisplay = KQ_SETTINGS.get('authorName');
+    if (authorDisplay) {
+      ctx.fillStyle = "#fbbf24"; ctx.font = "bold 15px system-ui";
+      ctx.fillText(`Made by ${authorDisplay} 🎮`, VIEW_W/2, 438);
+    }
     ctx.restore();
   }
 
@@ -1189,6 +1369,11 @@
     if (mode === "playing") {
       updateMovingPlatforms(dt);
       updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
+      // Boss: spawn when player near end of level 3
+      if (currentLevel && currentLevel.id === 3 && !bossSpawned && !bossDefeated) {
+        if (player.x > (currentLevel.width - 20) * 48) _spawnBoss();
+      }
+      updateBoss(dt);
       updateEffects(dt); updateCamera(dt);
     } else {
       updateEffects(dt);
@@ -1215,7 +1400,7 @@
     ctx.save();
     ctx.translate(Math.round(-cameraX + shakeX), Math.round(shakeY));
     drawWorld(); drawCollectibles(); drawEnemies(); drawProjectiles();
-    drawPlayer(); drawEffects();
+    drawPlayer(); drawBoss(); drawEffects();
     ctx.restore();
     drawHud();
 
@@ -1342,6 +1527,17 @@
   function _buildSettingsUI() {
     const container = document.getElementById('settings-sliders');
     if (!container) return;
+
+    // Author name row at top
+    const authorRow = `
+      <div class="setting-row" style="margin-bottom:12px">
+        <label class="setting-label" style="font-weight:bold">Your Name (for sharing)</label>
+        <input type="text" id="sv-authorName" class="ed-input"
+          placeholder="What's your name?"
+          value="${KQ_SETTINGS.get('authorName') || ''}"
+          style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);color:#f1f5f9;font-size:14px"/>
+      </div>`;
+
     const defs = [
       { key: 'gravityMult',     label: 'Gravity',           min: 0.2, max: 3.0, step: 0.1 },
       { key: 'speedMult',       label: 'Player Speed',      min: 0.3, max: 3.0, step: 0.1 },
@@ -1358,7 +1554,7 @@
       { key: 'showHitboxes',   label: '🟩 Show Hitboxes (debug)' },
     ];
 
-    container.innerHTML = defs.map(d => `
+    container.innerHTML = authorRow + defs.map(d => `
       <div class="setting-row">
         <label class="setting-label">${d.label}</label>
         <input type="range" class="setting-slider" data-key="${d.key}"
@@ -1373,6 +1569,11 @@
           ${KQ_SETTINGS.get(t.key) ? 'checked' : ''} />
       </div>
     `).join('');
+
+    const authorInput = container.querySelector('#sv-authorName');
+    if (authorInput) {
+      authorInput.addEventListener('input', () => KQ_SETTINGS.set('authorName', authorInput.value.trim()));
+    }
 
     container.querySelectorAll('.setting-slider').forEach(slider => {
       slider.addEventListener('input', () => {
@@ -1401,36 +1602,56 @@
         catch (e) { fetched[f] = `/* could not load ${f} */`; }
       }
 
+      // Collect all uploaded art as data URLs
+      const artOverrides = {};
+      if (window.KQ_ART) {
+        for (const slot of KQ_ART.getSlots()) {
+          const dataURL = KQ_ART.getDataURL(slot.key);
+          if (dataURL) artOverrides[slot.key] = dataURL;
+        }
+      }
+
+      const authorName = KQ_SETTINGS.get('authorName') || '';
+
       // Build a self-contained index.html with all JS inlined
-      const html = _buildExportHTML(fetched);
+      const html = _buildExportHTML(fetched, artOverrides, authorName);
       const blob = new Blob([html], { type: 'text/html' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'my-game.html';
+      const safeName = authorName ? authorName.replace(/[^a-z0-9]/gi, '-').toLowerCase() + '-game' : 'my-game';
+      a.download = safeName + '.html';
       a.click();
       URL.revokeObjectURL(a.href);
 
+      const artCount = Object.keys(artOverrides).length;
       alert(
         '✅ Game exported!\n\n' +
-        '"my-game.html" downloaded.\n\n' +
-        'To share it with a friend:\n' +
-        '1. Copy my-game.html\n' +
-        '2. Copy your assets/art/ folder next to it\n' +
-        '3. Your friend opens my-game.html in a browser!\n\n' +
-        'The game works even without the art folder — it just shows coloured shapes.'
+        (artCount > 0
+          ? `🎨 Your pictures are included! Your friend will see YOUR drawings, not colored boxes.\n(${artCount} custom picture${artCount !== 1 ? 's' : ''} baked in)\n\n`
+          : '') +
+        (authorName ? `Made by: ${authorName}\n\n` : '') +
+        'Just send the .html file — your friend opens it in any browser!\n' +
+        'No extra files needed.'
       );
     } catch (err) {
       alert('Export failed: ' + err.message);
     }
   }
 
-  function _buildExportHTML(files) {
+  function _buildExportHTML(files, artOverrides, authorName) {
+    artOverrides = artOverrides || {};
+    authorName = authorName || '';
+    const title = authorName ? `My Game by ${authorName}` : 'My Game';
+    const madeByHTML = authorName
+      ? `<p style="text-align:center;color:#94a3b8;font-size:13px;margin:6px 0 0">Made by <strong style="color:#fbbf24">${authorName}</strong> 🎮</p>`
+      : '';
+
     return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"/>
-  <title>My Game</title>
+  <title>${title}</title>
   <style>${files['style.css']}</style>
 </head>
 <body>
@@ -1438,40 +1659,66 @@
     <canvas id="game" width="960" height="540" aria-label="Platformer Game"></canvas>
     <div id="gpToast" style="position:fixed;top:16px;right:16px;background:#1e293b;color:#fbbf24;padding:10px 18px;border-radius:10px;font:bold 15px system-ui;opacity:0;transition:opacity .4s;pointer-events:none;z-index:9999"></div>
     <section id="menuPanel" style="display:flex">
-      <div class="menu-card">
-        <div class="menu-title">Placeholder Game</div>
-        <p class="menu-sub">Replace title-logo.png to change the title!</p>
-        <button class="menu-btn menu-btn-primary" id="btn-play">▶ Play Game</button>
-        <button class="menu-btn" id="btn-editor">🗺 Level Editor</button>
-        <button class="menu-btn" id="btn-settings">⚙ Settings &amp; Modifiers</button>
-        <button class="menu-btn" id="btn-howtoplay">❓ How to Play</button>
-        <button class="menu-btn" id="btn-export">📦 Export My Game</button>
+      <div class="big-menu">
+        <div class="game-title-area">
+          <img src="assets/art/title-logo.png" alt="Game Title" class="title-logo-img"
+               onerror="this.style.display='none'; document.getElementById('title-text').style.display='block'"/>
+          <div id="title-text" class="title-text-fallback" style="display:none">${title}</div>
+        </div>
+        ${madeByHTML}
+        <div class="big-button-row">
+          <button class="kid-btn kid-btn-play" id="btn-play">
+            <span class="kid-btn-icon">▶️</span>
+            <span class="kid-btn-label">PLAY!</span>
+            <span class="kid-btn-sub">Start the game</span>
+          </button>
+        </div>
+        <div class="advanced-row">
+          <button class="small-btn" id="btn-howtoplay">❓ How to Play</button>
+          <button class="small-btn" id="btn-settings">⚙️ Settings</button>
+        </div>
+        <!-- Hidden stubs so game.js event wiring doesn't crash -->
+        <button id="btn-editor"  style="display:none"></button>
+        <button id="btn-art"     style="display:none"></button>
+        <button id="btn-export"  style="display:none"></button>
       </div>
     </section>
+    <section id="artPanel" style="display:none"><div id="art-slots-container"></div></section>
     <section id="settingsPanel" style="display:none">
       <div class="menu-card settings-card">
-        <div class="menu-title" style="font-size:28px">⚙ Settings</div>
-        <p class="menu-sub">Tweak the game to make it your own!</p>
-        <div id="settings-sliders"></div>
-        <div style="display:flex;gap:12px;margin-top:18px">
-          <button class="menu-btn" id="btn-settings-reset">🔄 Reset Defaults</button>
-          <button class="menu-btn menu-btn-primary" id="btn-settings-back">← Back</button>
+        <div class="panel-header">
+          <button class="back-btn" id="btn-settings-back">← Back</button>
+          <h2 class="panel-title">⚙️ Game Settings</h2>
         </div>
+        <div id="settings-sliders"></div>
+        <button class="small-btn" id="btn-settings-reset" style="margin-top:12px">🔄 Reset Defaults</button>
       </div>
     </section>
     <section id="editorPanel" style="display:none">
       <div id="editorSidePanel"></div>
     </section>
     <nav id="touchControls" aria-label="Touch controls">
-      <button data-touch="left">◀</button>
-      <button data-touch="right">▶</button>
-      <button data-touch="jump">A</button>
-      <button data-touch="shoot">B</button>
-      <button data-touch="dash">Dash</button>
+      <div class="touch-left">
+        <button data-touch="left" aria-label="Move left">◀</button>
+        <button data-touch="right" aria-label="Move right">▶</button>
+      </div>
+      <div class="touch-right">
+        <button data-touch="jump"  aria-label="Jump"  class="touch-a">A</button>
+        <button data-touch="shoot" aria-label="Shoot" class="touch-b">B</button>
+        <button data-touch="dash"  aria-label="Dash"  class="touch-dash">💨</button>
+      </div>
     </nav>
   </main>
+  <script>
+// Baked-in art from the game creator
+const _bakedArt = ${JSON.stringify(artOverrides)};
+for (const [k, v] of Object.entries(_bakedArt)) {
+  try { localStorage.setItem('kq_art_v1_' + k, v); } catch(e) {}
+}
+  </script>
   <script>${files['js/settings.js']}</script>
   <script>${files['js/gamepad.js']}</script>
+  <script>${files['js/artmanager.js']}</script>
   <script>${files['js/assets.js']}</script>
   <script>${files['js/levels.js']}</script>
   <script>${files['js/editor.js']}</script>
