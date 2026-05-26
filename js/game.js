@@ -67,6 +67,38 @@
   let bossSpawned = false;
   let bossDefeated = false;
 
+  // ── Shooter genre state ────────────────────────────────────
+  const shooter = {
+    enemies: [],       // { x, y, w, h, vx, vy, alive, hp, shootTimer, divingTo, bobOffset }
+    wave: 0,
+    waveTimer: 0,
+    formDir: 1,        // formation march direction
+    playerX: 0,        // shooter player x (center of ship)
+    shootCooldown: 0,
+    autoShootTimer: 0,
+    stars: [],         // parallax star field
+    lives: 3,
+    score: 0,
+    bossActive: false,
+    bossHp: 0,
+    bossX: 0, bossY: 0, bossVx: 100,
+    bossShootTimer: 0,
+  };
+
+  // ── Hint popup system ──────────────────────────────────────
+  let hintPopup = null; // { lines[], timer, maxTimer, dismissed }
+  const HINT_STORAGE_KEY = 'kq_hint_dismissed_';
+
+  function showHint(key, lines) {
+    try { if (localStorage.getItem(HINT_STORAGE_KEY + key)) return; } catch(e) {}
+    hintPopup = { key, lines, dismissed: false };
+  }
+  function dismissHint() {
+    if (!hintPopup) return;
+    try { localStorage.setItem(HINT_STORAGE_KEY + hintPopup.key, '1'); } catch(e) {}
+    hintPopup = null;
+  }
+
   // ── Helpers ────────────────────────────────────────────────
   function makePlayer() {
     return {
@@ -189,6 +221,7 @@
 
     if (mode === "editor") { KQ_EDITOR.handleKey(e); return; }
 
+    if (hintPopup) { dismissHint(); return; }
     if (code === "enter" || code === " ") ensureAudio(), handleStart();
     if (code === "p" || code === "escape") handlePause();
     if (code === "r") { ensureAudio(); resetLevel(true); mode = "playing"; }
@@ -226,6 +259,7 @@
 
   canvas.addEventListener("pointerdown", (e) => {
     ensureAudio();
+    if (hintPopup) { dismissHint(); return; }
     if (mode === "paused") {
       _handlePauseClick(e);
       return;
@@ -269,7 +303,9 @@
       return;
     }
     if (mode === "gameover" || mode === "win") {
-      resetLevel(true); mode = "playing";
+      const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
+      if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
+      else { resetLevel(true); mode = "playing"; }
     }
   }
   function handlePause() {
@@ -921,6 +957,364 @@
     cameraX += (target - cameraX) * Math.min(1, dt * 7.5);
   }
 
+  // ── Space Shooter genre ────────────────────────────────────
+  const SHOOTER_COLS = 10;
+  const SHOOTER_ROWS = 4;
+  const SHOOTER_SHIP_W = 48, SHOOTER_SHIP_H = 40;
+  const SHOOTER_ENEMY_W = 40, SHOOTER_ENEMY_H = 34;
+
+  function _shooterInit() {
+    shooter.playerX  = VIEW_W / 2;
+    shooter.shootCooldown = 0;
+    shooter.autoShootTimer = 0;
+    shooter.wave     = 0;
+    shooter.waveTimer = 0;
+    shooter.formDir  = 1;
+    shooter.bossActive = false;
+    shooter.enemies  = [];
+    shooter.lives    = KQ_SETTINGS.get('infiniteLives') ? 99 : KQ_SETTINGS.get('startLives');
+    shooter.score    = 0;
+    game.projectiles = [];
+    game.particles   = [];
+    game.popups      = [];
+
+    // Init star field once
+    if (shooter.stars.length === 0) {
+      for (let i = 0; i < 120; i++) {
+        shooter.stars.push({
+          x: Math.random() * VIEW_W,
+          y: Math.random() * VIEW_H,
+          r: Math.random() * 1.8 + 0.3,
+          speed: Math.random() * 60 + 20,
+          bright: Math.random()
+        });
+      }
+    }
+    _shooterSpawnWave();
+    showHint('shooter', [
+      '🚀 You are the SPACESHIP at the bottom!',
+      'Move: Arrow Keys or A/D     Shoot: X or Space',
+      '',
+      '🎨 Art tip: Your HERO picture becomes the ship.',
+      'Try drawing it pointing UP for best results!',
+      '👾 BAD GUYS use your enemy pictures — draw them',
+      'from ABOVE like you\'re looking down from space.',
+      '',
+      '       Tap or press any key to close this tip',
+    ]);
+  }
+
+  function _shooterSpawnWave() {
+    const TOTAL_WAVES = 5;
+    if (shooter.wave >= TOTAL_WAVES) {
+      // Boss wave
+      shooter.bossActive = true;
+      shooter.bossHp = 20;
+      shooter.bossX = VIEW_W / 2 - 50;
+      shooter.bossY = 60;
+      shooter.bossVx = 120;
+      shooter.bossShootTimer = 1.5;
+      return;
+    }
+    shooter.enemies = [];
+    const startX = 80, startY = 60;
+    const gapX = 56, gapY = 48;
+    for (let row = 0; row < SHOOTER_ROWS; row++) {
+      for (let col = 0; col < SHOOTER_COLS; col++) {
+        shooter.enemies.push({
+          x: startX + col * gapX,
+          y: startY + row * gapY,
+          w: SHOOTER_ENEMY_W, h: SHOOTER_ENEMY_H,
+          alive: true, hp: 1,
+          shootTimer: 3 + Math.random() * 4,
+          divingTo: null,
+          bobOffset: Math.random() * Math.PI * 2,
+          type: row === 0 ? 'flyer' : row < 2 ? 'jumper' : 'walker',
+        });
+      }
+    }
+    shooter.formDir = 1;
+    shooter.waveTimer = 0;
+  }
+
+  function updateShooter(dt) {
+    shooter.waveTimer += dt;
+
+    // Stars scroll
+    for (const s of shooter.stars) {
+      s.y += s.speed * dt;
+      if (s.y > VIEW_H) { s.y = 0; s.x = Math.random() * VIEW_W; }
+    }
+
+    // Player movement
+    const shipSpeed = 320 * KQ_SETTINGS.get('speedMult');
+    if (pressed('left'))  shooter.playerX -= shipSpeed * dt;
+    if (pressed('right')) shooter.playerX += shipSpeed * dt;
+    shooter.playerX = Math.max(SHOOTER_SHIP_W/2, Math.min(VIEW_W - SHOOTER_SHIP_W/2, shooter.playerX));
+
+    // Player shooting — auto every 0.35s if fire held, or tap
+    shooter.autoShootTimer -= dt;
+    shooter.shootCooldown  -= dt;
+    const firePressing = pressed('jump') || pressed('shoot');
+    if (firePressing && shooter.shootCooldown <= 0) {
+      _shooterFirePlayer();
+      shooter.shootCooldown = 0.22;
+    }
+    // Auto-fire if nothing pressed every 1.2s (casual mode for young kids)
+    if (!firePressing && shooter.autoShootTimer <= 0) {
+      _shooterFirePlayer();
+      shooter.autoShootTimer = 1.4;
+    }
+
+    // Move formation
+    const aliveEnemies = shooter.enemies.filter(e => e.alive);
+
+    if (!shooter.bossActive) {
+      // Find formation bounds
+      const xs = aliveEnemies.map(e => e.x);
+      const minX = xs.length ? Math.min(...xs) : 0;
+      const maxX = xs.length ? Math.max(...xs) + SHOOTER_ENEMY_W : VIEW_W;
+      const formSpeed = (40 + shooter.wave * 10) * KQ_SETTINGS.get('enemySpeedMult');
+
+      // March sideways
+      for (const e of shooter.enemies) {
+        if (!e.alive) continue;
+        e.x += shooter.formDir * formSpeed * dt;
+        // Bob vertically
+        e.y += Math.sin(shooter.waveTimer * 2 + e.bobOffset) * 18 * dt;
+      }
+      // Bounce formation
+      if ((shooter.formDir > 0 && maxX > VIEW_W - 10) ||
+          (shooter.formDir < 0 && minX < 10)) {
+        shooter.formDir *= -1;
+        for (const e of shooter.enemies) { if (e.alive) e.y += 12; }
+      }
+
+      // Enemy shooting
+      for (const e of aliveEnemies) {
+        e.shootTimer -= dt;
+        if (e.shootTimer <= 0) {
+          e.shootTimer = 2 + Math.random() * 3;
+          game.projectiles.push({
+            x: e.x + e.w/2 - 4, y: e.y + e.h,
+            w: 8, h: 16, dir: 1,
+            vy: 280 * KQ_SETTINGS.get('projectileSpeed'),
+            _enemyShot: true,
+          });
+        }
+      }
+
+      // Wave clear
+      if (aliveEnemies.length === 0) {
+        shooter.wave++;
+        shooter.waveTimer = 0;
+        _shooterSpawnWave();
+        beep('win');
+      }
+    } else {
+      // Boss movement
+      shooter.bossX += shooter.bossVx * dt;
+      if (shooter.bossX < 20 || shooter.bossX > VIEW_W - 120) shooter.bossVx *= -1;
+      shooter.bossY += Math.sin(shooter.waveTimer * 1.5) * 30 * dt;
+
+      // Boss shooting
+      shooter.bossShootTimer -= dt;
+      if (shooter.bossShootTimer <= 0) {
+        shooter.bossShootTimer = 0.9;
+        const bx = shooter.bossX + 50;
+        const by = shooter.bossY + 80;
+        // Spread shot
+        for (const angle of [-0.3, 0, 0.3]) {
+          game.projectiles.push({
+            x: bx - 4, y: by,
+            w: 10, h: 18, dir: 1,
+            vx: Math.sin(angle) * 200,
+            vy: Math.cos(angle) * 260 * KQ_SETTINGS.get('projectileSpeed'),
+            _enemyShot: true,
+          });
+        }
+      }
+    }
+
+    // Update projectiles
+    for (const p of game.projectiles) {
+      p.x += (p.vx || 0) * dt;
+      p.y += p.vy * (p.dir || 1) * dt;
+    }
+
+    // Player projectile hits enemies
+    const playerShots = game.projectiles.filter(p => !p._enemyShot);
+    for (const shot of playerShots) {
+      if (shot._dead) continue;
+      if (shooter.bossActive && shooter.bossHp > 0) {
+        if (shot.x > shooter.bossX && shot.x < shooter.bossX + 100 &&
+            shot.y > shooter.bossY && shot.y < shooter.bossY + 80) {
+          shot._dead = true;
+          shooter.bossHp--;
+          screenShake = 6;
+          beep('hurt');
+          _spawnParticles(shooter.bossX + 50, shooter.bossY + 40, '#f97316', 6);
+          if (shooter.bossHp <= 0) {
+            _spawnParticles(shooter.bossX + 50, shooter.bossY + 40, '#fbbf24', 20);
+            shooter.bossActive = false;
+            mode = 'win';
+            beep('win');
+          }
+        }
+        continue;
+      }
+      for (const e of shooter.enemies) {
+        if (!e.alive || shot._dead) continue;
+        if (shot.x > e.x && shot.x < e.x + e.w && shot.y > e.y && shot.y < e.y + e.h) {
+          shot._dead = true;
+          e.alive = false;
+          shooter.score += 100;
+          game.score = shooter.score;
+          beep('stomp');
+          _spawnParticles(e.x + e.w/2, e.y + e.h/2, '#f97316', 5);
+          game.popups.push({ text: '+100', x: e.x + e.w/2, y: e.y, life: 0.8 });
+        }
+      }
+    }
+
+    // Enemy projectile hits player
+    if (!KQ_SETTINGS.get('invincibleMode')) {
+      const playerShipRect = {
+        x: shooter.playerX - SHOOTER_SHIP_W/2,
+        y: VIEW_H - SHOOTER_SHIP_H - 16,
+        w: SHOOTER_SHIP_W, h: SHOOTER_SHIP_H
+      };
+      for (const p of game.projectiles) {
+        if (!p._enemyShot || p._dead) continue;
+        if (p.x > playerShipRect.x && p.x < playerShipRect.x + playerShipRect.w &&
+            p.y > playerShipRect.y && p.y < playerShipRect.y + playerShipRect.h) {
+          p._dead = true;
+          shooter.lives--;
+          screenShake = 10;
+          beep('hurt');
+          _spawnParticles(shooter.playerX, VIEW_H - SHOOTER_SHIP_H - 16, '#ef4444', 8);
+          if (shooter.lives <= 0) { mode = 'gameover'; }
+        }
+      }
+    }
+
+    // Cull dead/offscreen projectiles
+    game.projectiles = game.projectiles.filter(p => !p._dead && p.y > -40 && p.y < VIEW_H + 40);
+    updateEffects(dt);
+  }
+
+  function renderShooter() {
+    // Star field bg
+    const ASSETS = window.KQ_ASSETS || {};
+    if (!drawImg((ASSETS.backgrounds||{}).bg_cave, 0, 0, VIEW_W, VIEW_H)) {
+      ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      for (const s of shooter.stars) {
+        ctx.globalAlpha = 0.4 + s.bright * 0.6;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Enemy formation
+    for (const e of shooter.enemies) {
+      if (!e.alive) continue;
+      const tint = e.type === 'flyer' ? KQ_SETTINGS.get('tintFlyer') :
+                   e.type === 'jumper' ? KQ_SETTINGS.get('tintJumper') :
+                   KQ_SETTINGS.get('tintWalker');
+      const assetKey = (ASSETS.enemies||{})[e.type];
+      drawWithTint(tint, e.x, e.y, e.w, e.h, () => {
+        if (!drawImg(assetKey, e.x, e.y, e.w, e.h)) {
+          const colors = { walker: '#fb923c', jumper: '#f97316', flyer: '#c084fc' };
+          ctx.fillStyle = colors[e.type] || '#fb923c';
+          ctx.fillRect(e.x, e.y, e.w, e.h);
+          // Simple alien eyes
+          ctx.fillStyle = '#111';
+          ctx.fillRect(e.x + 8, e.y + 10, 6, 6);
+          ctx.fillRect(e.x + e.w - 14, e.y + 10, 6, 6);
+        }
+      });
+    }
+
+    // Boss
+    if (shooter.bossActive && shooter.bossHp > 0) {
+      const bx = shooter.bossX, by = shooter.bossY;
+      if (!drawImg((ASSETS.enemies||{}).walker, bx, by, 100, 80)) {
+        ctx.fillStyle = '#dc2626'; ctx.fillRect(bx, by, 100, 80);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(bx + 15, by + 20, 14, 14);
+        ctx.fillRect(bx + 71, by + 20, 14, 14);
+        ctx.fillStyle = '#111'; ctx.fillRect(bx + 19, by + 24, 6, 6);
+        ctx.fillRect(bx + 75, by + 24, 6, 6);
+      }
+      // Boss health bar
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(VIEW_W/2 - 120, 14, 240, 18);
+      const pct = shooter.bossHp / 20;
+      ctx.fillStyle = `hsl(${pct * 120},80%,45%)`;
+      ctx.fillRect(VIEW_W/2 - 118, 16, 236 * pct, 14);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('👾 BOSS', VIEW_W/2, 27);
+    }
+
+    // Projectiles
+    for (const p of game.projectiles) {
+      if (p._enemyShot) {
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath(); ctx.arc(p.x + p.w/2, p.y + p.h/2, p.w/2, 0, Math.PI*2); ctx.fill();
+      } else if (!drawImg(ASSETS.projectile, p.x, p.y, p.w, p.h)) {
+        ctx.fillStyle = '#38bdf8'; ctx.fillRect(p.x, p.y, p.w, p.h);
+      }
+    }
+
+    // Player ship
+    const px = shooter.playerX - SHOOTER_SHIP_W/2;
+    const py = VIEW_H - SHOOTER_SHIP_H - 16;
+    const playerTint = KQ_SETTINGS.get('tintPlayer');
+    drawWithTint(playerTint, px, py, SHOOTER_SHIP_W, SHOOTER_SHIP_H, () => {
+      if (!drawImg((ASSETS.player||{}).idle, px, py, SHOOTER_SHIP_W, SHOOTER_SHIP_H)) {
+        // Draw a simple ship shape
+        ctx.fillStyle = '#2563eb';
+        ctx.beginPath();
+        ctx.moveTo(px + SHOOTER_SHIP_W/2, py);
+        ctx.lineTo(px + SHOOTER_SHIP_W, py + SHOOTER_SHIP_H);
+        ctx.lineTo(px, py + SHOOTER_SHIP_H);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#7dd3fc';
+        ctx.fillRect(px + SHOOTER_SHIP_W/2 - 5, py + 10, 10, 16);
+        // Exhaust flame
+        ctx.fillStyle = `hsl(${30 + Math.random()*30},100%,60%)`;
+        ctx.fillRect(px + SHOOTER_SHIP_W/2 - 6, py + SHOOTER_SHIP_H, 12, 8 + Math.random()*6);
+      }
+    });
+
+    // Effects
+    drawEffects();
+
+    // HUD
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 18px system-ui';
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillText(`⭐ ${shooter.score}`, 16, 28);
+    ctx.fillStyle = '#ef4444';
+    ctx.fillText(`❤️ ${shooter.lives}`, 16, 52);
+    ctx.fillStyle = '#94a3b8'; ctx.font = '13px system-ui';
+    ctx.fillText(`Wave ${shooter.wave + 1}`, VIEW_W - 80, 28);
+
+    // Gameover / win overlay
+    if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${shooter.score}`, 'Press Enter or Tap to Try Again');
+    if (mode === 'win') drawOverlay('You Win! 🎉', `Score: ${shooter.score}`, 'Press Enter or Tap to Play Again');
+  }
+
+  function _shooterFirePlayer() {
+    const px = shooter.playerX;
+    const py = VIEW_H - SHOOTER_SHIP_H - 16;
+    const spd = 580 * KQ_SETTINGS.get('projectileSpeed');
+    game.projectiles.push({ x: px - 4, y: py, w: 8, h: 18, dir: -1, vy: spd, vx: 0 });
+    beep('shoot');
+  }
+
   // ── Render helpers ─────────────────────────────────────────
   function drawBackground() {
     const ASSETS = window.KQ_ASSETS || {};
@@ -1295,6 +1689,38 @@
     ctx.restore();
   }
 
+  function drawHintPopup() {
+    if (!hintPopup) return;
+    const lines = hintPopup.lines;
+    const pad = 28, lineH = 22;
+    const boxH = lines.length * lineH + pad * 2 + 48;
+    const boxW = 580;
+    const bx = VIEW_W/2 - boxW/2, by = VIEW_H/2 - boxH/2;
+
+    ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle = 'rgba(2,6,23,0.82)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.fillStyle = '#1e293b';
+    _roundRect(bx, by, boxW, boxH, 20); ctx.fill();
+    ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2; ctx.stroke();
+
+    ctx.textAlign = 'center';
+    for (let i = 0; i < lines.length; i++) {
+      const y = by + pad + 16 + i * lineH;
+      if (i === 0) {
+        ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 17px system-ui';
+      } else {
+        ctx.fillStyle = '#e2e8f0'; ctx.font = '14px system-ui';
+      }
+      ctx.fillText(lines[i], VIEW_W/2, y);
+    }
+
+    // Dismiss button
+    const btnY = by + boxH - 36;
+    ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 13px system-ui';
+    ctx.fillText('✅  Got it! Tap anywhere to close', VIEW_W/2, btnY);
+    ctx.restore();
+  }
+
   function drawOverlay(title, subtitle, button) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "rgba(2,6,23,.64)"; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -1479,15 +1905,21 @@
   function update(dt) {
     game.time += dt;
     KQ_GAMEPAD.poll();
+    const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
     if (mode === "playing") {
-      updateMovingPlatforms(dt);
-      updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
-      // Boss: spawn when player near end of level 3
-      if (currentLevel && currentLevel.id === 3 && !bossSpawned && !bossDefeated) {
-        if (player.x > (currentLevel.width - 20) * 48) _spawnBoss();
+      if (gmode === 'shooter') {
+        updateShooter(dt);
+      } else {
+        updateMovingPlatforms(dt);
+        updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
+        if (currentLevel && currentLevel.id === 3 && !bossSpawned && !bossDefeated) {
+          if (player.x > (currentLevel.width - 20) * 48) _spawnBoss();
+        }
+        updateBoss(dt);
+        updateEffects(dt); updateCamera(dt);
       }
-      updateBoss(dt);
-      updateEffects(dt); updateCamera(dt);
+    } else if (mode === 'gameover' || mode === 'win') {
+      updateEffects(dt);
     } else {
       updateEffects(dt);
     }
@@ -1498,18 +1930,16 @@
     const shakeY = screenShake > 0 ? (Math.random()-0.5)*screenShake : 0;
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
-    if (mode === "title") {
-      drawTitleScreen();
-      return;
-    }
+    if (mode === "title") { drawTitleScreen(); drawHintPopup(); return; }
+    if (mode === "editor") { KQ_EDITOR.render(); return; }
+    if (mode === "levelselect") { drawLevelSelect(); return; }
 
-    if (mode === "editor") {
-      KQ_EDITOR.render();
-      return;
-    }
+    const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
 
-    if (mode === "levelselect") {
-      drawLevelSelect();
+    if (gmode === 'shooter' && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
+      renderShooter();
+      if (mode === 'paused') drawPauseMenu();
+      drawHintPopup();
       return;
     }
 
@@ -1537,6 +1967,7 @@
         isLast ? "Press R / Enter to Play Again" : "Next level loading…"
       );
     }
+    drawHintPopup();
   }
 
   function loop(now) {
@@ -1571,11 +2002,41 @@
     const btnArt = document.getElementById('btn-art');
     if (btnArt) btnArt.addEventListener('click', () => { beep('menu'); _showArtPanel(); });
 
+    // ── Genre picker ───────────────────────────────────────
+    function _updateGenreBtns() {
+      const cur = KQ_SETTINGS.get('gameMode') || 'platformer';
+      document.querySelectorAll('.genre-btn').forEach(b => {
+        b.style.background = b.dataset.genre === cur
+          ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.08)';
+        b.style.borderColor = b.dataset.genre === cur
+          ? '#fbbf24' : 'rgba(255,255,255,0.15)';
+        b.style.color = b.dataset.genre === cur ? '#fbbf24' : '#cbd5e1';
+      });
+      // Show/hide editor button based on genre (no editor for shooter)
+      const edBtn = document.getElementById('btn-editor');
+      if (edBtn) edBtn.style.display = cur === 'platformer' ? '' : 'none';
+    }
+    document.querySelectorAll('.genre-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        beep('menu');
+        KQ_SETTINGS.set('gameMode', b.dataset.genre);
+        _updateGenreBtns();
+      });
+    });
+    _updateGenreBtns();
+
     // ── Main menu ──────────────────────────────────────────
     document.getElementById('btn-play').addEventListener('click', () => {
       ensureAudio(); beep('menu');
-      mode = 'levelselect';
-      _hideAllPanels();
+      const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
+      if (gmode === 'shooter') {
+        _shooterInit();
+        mode = 'playing';
+        _hideAllPanels();
+      } else {
+        mode = 'levelselect';
+        _hideAllPanels();
+      }
     });
 
     document.getElementById('btn-editor').addEventListener('click', () => {
