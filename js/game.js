@@ -33,7 +33,7 @@
   let cameraX     = 0;
   let screenShake = 0;
   let lastTime    = performance.now();
-  let mode        = "menu";   // menu | playing | paused | editor | settings | howtoplay | gameover | win | levelselect
+  let mode        = "title";  // title | menu | playing | paused | editor | settings | gameover | win | levelselect
   let levelIndex  = 0;
   let playtestReturnMode = null;
 
@@ -113,6 +113,31 @@
     else ctx.drawImage(img, x, y, w, h);
     ctx.restore();
     return true;
+  }
+
+  // Apply a color tint while drawing: draws with multiply composite, then restores
+  function withTint(tintColor, drawFn) {
+    if (!tintColor) { drawFn(); return; }
+    ctx.save();
+    drawFn();
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = tintColor;
+    // We'll fill the bounding rect passed via opts; for convenience callers pass it
+    // Instead, callers should wrap the region themselves
+    ctx.restore();
+  }
+
+  // Simpler: draw entity with tint overlay
+  function drawWithTint(tintColor, x, y, w, h, drawFn) {
+    drawFn();
+    if (!tintColor) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = tintColor;
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
   }
 
   // ── Audio ──────────────────────────────────────────────────
@@ -230,6 +255,13 @@
   });
 
   function handleStart() {
+    if (mode === "title") {
+      ensureAudio();
+      beep('menu');
+      mode = "menu";
+      _showMenuPanel();
+      return;
+    }
     if (mode === "menu") {
       // Go to level select instead of directly playing
       mode = "levelselect";
@@ -1031,28 +1063,36 @@
       if (!e.alive) continue;
       const flip = e.vx > 0;
       if (e.type === 'jumper') {
-        if (!drawImg((ASSETS.enemies||{}).jumper, e.x, e.y, e.w, e.h, { flip })) {
-          ctx.fillStyle = '#f97316'; ctx.fillRect(e.x, e.y, e.w, e.h);
-          ctx.fillStyle = '#111827';
-          ctx.fillRect(e.x + (flip ? 22 : 8), e.y + 10, 6, 6);
-        }
+        const tint = KQ_SETTINGS.get('tintJumper');
+        drawWithTint(tint, e.x, e.y, e.w, e.h, () => {
+          if (!drawImg((ASSETS.enemies||{}).jumper, e.x, e.y, e.w, e.h, { flip })) {
+            ctx.fillStyle = '#f97316'; ctx.fillRect(e.x, e.y, e.w, e.h);
+            ctx.fillStyle = '#111827';
+            ctx.fillRect(e.x + (flip ? 22 : 8), e.y + 10, 6, 6);
+          }
+        });
       } else if (e.type === 'flyer') {
-        if (!drawImg((ASSETS.enemies||{}).flyer, e.x, e.y, e.w, e.h, { flip })) {
-          ctx.fillStyle = '#c084fc'; ctx.fillRect(e.x, e.y, e.w, e.h);
-          ctx.fillStyle = '#111827';
-          ctx.fillRect(e.x + (flip ? 20 : 8), e.y + 8, 6, 6);
-          // Wings
-          ctx.fillStyle = 'rgba(192,132,252,0.5)';
-          const wingFlap = Math.sin(game.time * 10) * 6;
-          ctx.fillRect(e.x - 10, e.y + wingFlap, 10, 16);
-          ctx.fillRect(e.x + e.w, e.y + wingFlap, 10, 16);
-        }
+        const tint = KQ_SETTINGS.get('tintFlyer');
+        drawWithTint(tint, e.x, e.y, e.w, e.h, () => {
+          if (!drawImg((ASSETS.enemies||{}).flyer, e.x, e.y, e.w, e.h, { flip })) {
+            ctx.fillStyle = '#c084fc'; ctx.fillRect(e.x, e.y, e.w, e.h);
+            ctx.fillStyle = '#111827';
+            ctx.fillRect(e.x + (flip ? 20 : 8), e.y + 8, 6, 6);
+            ctx.fillStyle = 'rgba(192,132,252,0.5)';
+            const wingFlap = Math.sin(game.time * 10) * 6;
+            ctx.fillRect(e.x - 10, e.y + wingFlap, 10, 16);
+            ctx.fillRect(e.x + e.w, e.y + wingFlap, 10, 16);
+          }
+        });
       } else {
-        if (!drawImg((ASSETS.enemies||{}).walker, e.x, e.y, e.w, e.h, { flip })) {
-          ctx.fillStyle = "#fb923c"; ctx.fillRect(e.x, e.y, e.w, e.h);
-          ctx.fillStyle = "#111827";
-          ctx.fillRect(e.x + (flip ? 25 : 9), e.y + 10, 6, 6);
-        }
+        const tint = KQ_SETTINGS.get('tintWalker');
+        drawWithTint(tint, e.x, e.y, e.w, e.h, () => {
+          if (!drawImg((ASSETS.enemies||{}).walker, e.x, e.y, e.w, e.h, { flip })) {
+            ctx.fillStyle = "#fb923c"; ctx.fillRect(e.x, e.y, e.w, e.h);
+            ctx.fillStyle = "#111827";
+            ctx.fillRect(e.x + (flip ? 25 : 9), e.y + 10, 6, 6);
+          }
+        });
       }
     }
   }
@@ -1067,12 +1107,15 @@
 
     if (player.invincible > 0 && Math.floor(game.time * 18) % 2 === 0) ctx.globalAlpha = 0.45;
     const flip = player.dir < 0;
-    if (!drawImg(frame, player.x, player.y, player.w, player.h, { flip })) {
-      ctx.fillStyle = player.power.giant ? "#a855f7" : "#2563eb";
-      ctx.fillRect(player.x, player.y, player.w, player.h);
-      ctx.fillStyle = "#f8fafc";
-      ctx.fillRect(player.x + (flip ? 8 : player.w - 14), player.y + 11, 6, 6);
-    }
+    const playerTint = KQ_SETTINGS.get('tintPlayer');
+    drawWithTint(playerTint, player.x, player.y, player.w, player.h, () => {
+      if (!drawImg(frame, player.x, player.y, player.w, player.h, { flip })) {
+        ctx.fillStyle = player.power.giant ? "#a855f7" : "#2563eb";
+        ctx.fillRect(player.x, player.y, player.w, player.h);
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(player.x + (flip ? 8 : player.w - 14), player.y + 11, 6, 6);
+      }
+    });
     ctx.globalAlpha = 1;
 
     if (player.power.shield > 0) {
@@ -1180,6 +1223,76 @@
     ctx.arcTo(x+w, y, x+w, y+h, r); ctx.arcTo(x+w, y+h, x, y+h, r);
     ctx.arcTo(x, y+h, x, y, r);     ctx.arcTo(x, y, x+w, y, r);
     ctx.closePath();
+  }
+
+  // ── NES-style full-canvas title screen ────────────────────
+  function drawTitleScreen() {
+    const ASSETS = window.KQ_ASSETS || {};
+    // Try full title-screen art first, fall back to a painted scene
+    const drew = drawImg(ASSETS.titleLogo, 0, 0, VIEW_W, VIEW_H);
+
+    if (!drew) {
+      // Painted placeholder that still feels like a game cover
+      const sky = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+      sky.addColorStop(0, '#1e0a3c'); sky.addColorStop(0.6, '#0f172a'); sky.addColorStop(1, '#1a3a1a');
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+      // Stars
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      for (let i = 0; i < 60; i++) {
+        const sx = (i * 137.5) % VIEW_W, sy = (i * 73.1) % (VIEW_H * 0.6);
+        ctx.fillRect(sx, sy, i % 3 === 0 ? 2 : 1, i % 3 === 0 ? 2 : 1);
+      }
+
+      // Title text with glow
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 30;
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = '900 72px system-ui, sans-serif';
+      ctx.fillText('PLACEHOLDER', VIEW_W / 2, 200);
+      ctx.font = '900 48px system-ui, sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = '#fff'; ctx.shadowBlur = 10;
+      ctx.fillText('GAME', VIEW_W / 2, 262);
+      ctx.shadowBlur = 0;
+
+      // Small hint
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '15px system-ui';
+      ctx.fillText('Replace assets/art/title-logo.png with your own title art!', VIEW_W / 2, 310);
+      ctx.restore();
+    }
+
+    // Author credit
+    const author = KQ_SETTINGS.get('authorName');
+    if (author) {
+      ctx.save();
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = 'bold 14px system-ui';
+      ctx.fillText('Made by ' + author + ' 🎮', VIEW_W - 16, VIEW_H - 14);
+      ctx.restore();
+    }
+
+    // Blinking "PRESS START" — classic NES style
+    if (Math.floor(game.time * 2) % 2 === 0) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 22px system-ui, sans-serif';
+      ctx.letterSpacing = '4px';
+      ctx.fillText('PRESS  START', VIEW_W / 2, VIEW_H - 52);
+      ctx.restore();
+    }
+
+    // Copyright-style footer
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '12px system-ui';
+    ctx.fillText('© YOUR NAME HERE  •  MADE WITH PLACEHOLDER GAME', VIEW_W / 2, VIEW_H - 20);
+    ctx.restore();
   }
 
   function drawOverlay(title, subtitle, button) {
@@ -1385,6 +1498,11 @@
     const shakeY = screenShake > 0 ? (Math.random()-0.5)*screenShake : 0;
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
+    if (mode === "title") {
+      drawTitleScreen();
+      return;
+    }
+
     if (mode === "editor") {
       KQ_EDITOR.render();
       return;
@@ -1586,6 +1704,42 @@
     container.querySelectorAll('.setting-check').forEach(cb => {
       cb.addEventListener('change', () => KQ_SETTINGS.set(cb.dataset.key, cb.checked));
     });
+
+    // Color tint section
+    const tintDefs = [
+      { key: 'tintPlayer', label: '🦸 Hero Color' },
+      { key: 'tintWalker', label: '👾 Walker Enemy' },
+      { key: 'tintJumper', label: '🐸 Jumper Enemy' },
+      { key: 'tintFlyer',  label: '🦋 Flyer Enemy' },
+      { key: 'tintCoin',   label: '⭐ Coin Color' },
+    ];
+    const tintSection = document.createElement('div');
+    tintSection.innerHTML = `
+      <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)">
+        <div style="font-size:13px;font-weight:900;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">🎨 Color Tints</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:10px">Mix in a color on top of your characters! Leave blank for no tint.</div>
+        ${tintDefs.map(t => `
+          <div class="setting-row">
+            <label class="setting-label">${t.label}</label>
+            <input type="color" data-tint-key="${t.key}"
+              value="${KQ_SETTINGS.get(t.key) || '#ffffff'}"
+              style="width:40px;height:32px;border:none;background:none;cursor:pointer;border-radius:6px"/>
+            <button data-tint-clear="${t.key}" style="padding:4px 10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#94a3b8;font-size:11px;cursor:pointer">✖ Clear</button>
+          </div>
+        `).join('')}
+      </div>`;
+    container.appendChild(tintSection);
+
+    tintSection.querySelectorAll('[data-tint-key]').forEach(input => {
+      input.addEventListener('input', () => KQ_SETTINGS.set(input.dataset.tintKey, input.value));
+    });
+    tintSection.querySelectorAll('[data-tint-clear]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        KQ_SETTINGS.set(btn.dataset.tintClear, '');
+        const inp = tintSection.querySelector(`[data-tint-key="${btn.dataset.tintClear}"]`);
+        if (inp) inp.value = '#ffffff';
+      });
+    });
   }
 
   // ── Export ─────────────────────────────────────────────────
@@ -1736,7 +1890,7 @@ for (const [k, v] of Object.entries(_bakedArt)) {
     if (edPanel) KQ_EDITOR.init(canvas, edPanel);
 
     _initMenuEvents();
-    _showMenuPanel();
+    _hideAllPanels(); // start on canvas title screen
 
     // Set up a blank level so the canvas has something to draw on startup
     levelIndex = 0;

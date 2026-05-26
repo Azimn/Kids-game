@@ -26,6 +26,13 @@ const DEFAULT_SETTINGS = {
 
   // Author / publisher
   authorName:       '',
+
+  // Color tints (CSS color strings, '' = no tint)
+  tintPlayer:       '',
+  tintWalker:       '',
+  tintJumper:       '',
+  tintFlyer:        '',
+  tintCoin:         '',
 };
 
 const KQ_SETTINGS = (() => {
