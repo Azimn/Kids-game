@@ -299,6 +299,9 @@
       } else if (gmode === 'brawler') {
         _brawlerInit();
         mode = 'playing';
+      } else if (gmode === 'metroid') {
+        _metroidInit();
+        mode = 'playing';
       } else {
         mode = "levelselect";
       }
@@ -309,6 +312,7 @@
       const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
       if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
       else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
+      else if (gmode === 'metroid') { _metroidInit(); mode = 'playing'; }
       else { mode = "levelselect"; }
       return;
     }
@@ -316,6 +320,7 @@
       const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
       if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
       else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
+      else if (gmode === 'metroid') { _metroidInit(); mode = 'playing'; }
       else { resetLevel(true); mode = "playing"; }
     }
   }
@@ -1755,6 +1760,312 @@
     if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${brawler.score}`, 'Press Enter or Tap to Try Again');
     if (mode === 'win')      drawOverlay('You Win! 🎉', `Score: ${brawler.score}`, 'Press Enter or Tap to Play Again');
   }
+
+  // ── Metroidvania genre state ───────────────────────────────
+  // Side-view explore-and-unlock: grab the double-jump to reach the
+  // key, the key opens the gate, the gate leads to the exit.
+  const metroid = {
+    grid: [], cols: 0, rows: 0, worldW: 0, worldH: 0,
+    px: 0, py: 0, vx: 0, vy: 0, dir: 1, anim: 0,
+    onGround: false, jumpsLeft: 1, jumpHeld: false,
+    hasDoubleJump: false, hasKey: false, doorOpen: false,
+    items: [], enemies: [], goal: null,
+    camX: 0, camY: 0,
+    lives: 3, score: 0, hurtTimer: 0, invTimer: 0,
+  };
+  const M_PW = 40, M_PH = 56;   // player hitbox
+  const M_SOLID = 1, M_DOOR = 2, M_SPIKE = 3;
+
+  function _metroidBuildMap() {
+    const COLS = 48, ROWS = 16;
+    const g = [];
+    for (let y = 0; y < ROWS; y++) g.push(new Array(COLS).fill(0));
+    const fill = (x0, y0, x1, y1, v) => {
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = v;
+    };
+    fill(0, 14, COLS - 1, 15, M_SOLID);   // floor
+    fill(0, 0, 0, 15, M_SOLID);           // left wall
+    fill(COLS - 1, 0, COLS - 1, 15, M_SOLID); // right wall
+    fill(0, 0, COLS - 1, 0, M_SOLID);     // ceiling
+    // climbing platforms (left explore area)
+    fill(4, 12, 7, 12, M_SOLID);
+    fill(10, 10, 13, 10, M_SOLID);
+    fill(16, 6, 20, 6, M_SOLID);          // high key ledge — needs double jump
+    // locked gate at col 28
+    fill(28, 1, 28, 7, M_SOLID);          // permanent wall (can't jump over)
+    fill(28, 8, 28, 13, M_DOOR);          // openable door
+    // spike pit beyond the gate
+    g[13][32] = M_SPIKE; g[13][33] = M_SPIKE;
+    return { g, COLS, ROWS };
+  }
+
+  function _mEnemy(tx, minTx, maxTx) {
+    const w = 40, h = 44;
+    return {
+      x: tx * TILE + 4, y: 14 * TILE - h, w, h,
+      dir: 1, spd: G_ENEMY() * 1.4, alive: true,
+      minX: minTx * TILE, maxX: maxTx * TILE,
+    };
+  }
+
+  function _metroidInit() {
+    const { g, COLS, ROWS } = _metroidBuildMap();
+    Object.assign(metroid, {
+      grid: g, cols: COLS, rows: ROWS,
+      worldW: COLS * TILE, worldH: ROWS * TILE,
+      px: 2 * TILE, py: 14 * TILE - M_PH,
+      vx: 0, vy: 0, dir: 1, anim: 0,
+      onGround: true, jumpsLeft: 1, jumpHeld: false,
+      hasDoubleJump: false, hasKey: false, doorOpen: false,
+      lives: KQ_SETTINGS.get('infiniteLives') ? 99 : KQ_SETTINGS.get('startLives'),
+      score: 0, hurtTimer: 0, invTimer: 0, camX: 0, camY: 0,
+      items: [
+        { type: 'djump', x: 11 * TILE + 4, y: 9 * TILE + 4, w: 40, h: 40, taken: false },
+        { type: 'key',   x: 18 * TILE + 8, y: 5 * TILE + 8, w: 32, h: 32, taken: false },
+      ],
+      enemies: [_mEnemy(14, 9, 19), _mEnemy(37, 35, 40), _mEnemy(43, 41, 44)],
+      goal: { x: 45 * TILE, y: 12 * TILE, w: TILE, h: TILE * 2 },
+    });
+    game.particles = []; game.popups = []; game.projectiles = []; game.score = 0;
+    showHint('metroid', [
+      '🗺️ Explore mode! Find hidden powers to open new paths.',
+      '',
+      'Move: Arrow Keys / WASD     Jump: Space / Up / A',
+      '',
+      '⏫ Grab the DOUBLE JUMP to reach high places (jump twice!).',
+      '🔑 Find the KEY — it opens the big locked gate.',
+      '🏁 Then reach the flag at the far side to escape!',
+      '',
+      '🎨 Art tip: Your hero is seen from the SIDE here too.',
+      '',
+      '      Tap or press any key to close this tip',
+    ]);
+  }
+
+  function _mSolid(tx, ty) {
+    if (tx < 0 || tx >= metroid.cols || ty >= metroid.rows) return true;
+    if (ty < 0) return false;
+    const v = metroid.grid[ty][tx];
+    return v === M_SOLID || (v === M_DOOR && !metroid.doorOpen);
+  }
+
+  function _mCollideX() {
+    const top = Math.floor(metroid.py / TILE), bottom = Math.floor((metroid.py + M_PH - 1) / TILE);
+    if (metroid.vx > 0) {
+      const right = Math.floor((metroid.px + M_PW - 1) / TILE);
+      for (let ty = top; ty <= bottom; ty++) if (_mSolid(right, ty)) { metroid.px = right * TILE - M_PW; metroid.vx = 0; break; }
+    } else if (metroid.vx < 0) {
+      const left = Math.floor(metroid.px / TILE);
+      for (let ty = top; ty <= bottom; ty++) if (_mSolid(left, ty)) { metroid.px = (left + 1) * TILE; metroid.vx = 0; break; }
+    }
+  }
+
+  function _mCollideY() {
+    metroid.onGround = false;
+    const left = Math.floor(metroid.px / TILE), right = Math.floor((metroid.px + M_PW - 1) / TILE);
+    if (metroid.vy > 0) {
+      const bottom = Math.floor((metroid.py + M_PH - 1) / TILE);
+      for (let tx = left; tx <= right; tx++) if (_mSolid(tx, bottom)) { metroid.py = bottom * TILE - M_PH; metroid.vy = 0; metroid.onGround = true; break; }
+    } else if (metroid.vy < 0) {
+      const top = Math.floor(metroid.py / TILE);
+      for (let tx = left; tx <= right; tx++) if (_mSolid(tx, top)) { metroid.py = (top + 1) * TILE; metroid.vy = 0; break; }
+    }
+  }
+
+  function _mTouchHazard() {
+    const left = Math.floor(metroid.px / TILE), right = Math.floor((metroid.px + M_PW - 1) / TILE);
+    const top = Math.floor(metroid.py / TILE), bottom = Math.floor((metroid.py + M_PH - 1) / TILE);
+    for (let ty = top; ty <= bottom; ty++) for (let tx = left; tx <= right; tx++) {
+      if (ty >= 0 && ty < metroid.rows && tx >= 0 && tx < metroid.cols && metroid.grid[ty][tx] === M_SPIKE) return true;
+    }
+    return false;
+  }
+
+  function _mHurt() {
+    metroid.lives--; metroid.hurtTimer = 0.4; metroid.invTimer = 1.2;
+    metroid.vy = -G_JUMP() * 0.4; screenShake = 8; beep('hurt');
+    if (metroid.lives <= 0) mode = 'gameover';
+  }
+
+  function updateMetroid(dt) {
+    metroid.anim += dt;
+    metroid.hurtTimer = Math.max(0, metroid.hurtTimer - dt);
+    metroid.invTimer  = Math.max(0, metroid.invTimer  - dt);
+
+    const spd = G_SPEED();
+    metroid.vx = 0;
+    if (pressed('left'))  { metroid.vx = -spd; metroid.dir = -1; }
+    if (pressed('right')) { metroid.vx =  spd; metroid.dir =  1; }
+
+    const wantJump = pressed('jump') || pressed('up');
+    if (wantJump) {
+      if (!metroid.jumpHeld && metroid.jumpsLeft > 0) {
+        metroid.vy = -G_JUMP(); metroid.jumpsLeft--; metroid.onGround = false; beep('jump');
+        spawnParticles(metroid.px + M_PW / 2, metroid.py + M_PH, '#bae6fd', 4);
+      }
+      metroid.jumpHeld = true;
+    } else metroid.jumpHeld = false;
+
+    metroid.vy += G_GRAV() * dt;
+    if (metroid.vy > 1300) metroid.vy = 1300;
+
+    metroid.px += metroid.vx * dt; _mCollideX();
+    metroid.py += metroid.vy * dt; _mCollideY();
+    if (metroid.onGround) metroid.jumpsLeft = metroid.hasDoubleJump ? 2 : 1;
+    metroid.px = Math.max(0, Math.min(metroid.worldW - M_PW, metroid.px));
+
+    // Item pickups
+    for (const it of metroid.items) {
+      if (it.taken) continue;
+      if (_brawlerOverlap(metroid.px, metroid.py, M_PW, M_PH, it.x, it.y, it.w, it.h)) {
+        it.taken = true;
+        if (it.type === 'djump') {
+          metroid.hasDoubleJump = true; metroid.jumpsLeft = 2; beep('power');
+          game.popups.push({ text: 'Double Jump!', x: it.x, y: it.y, life: 1.4 });
+        } else if (it.type === 'key') {
+          metroid.hasKey = true; metroid.doorOpen = true; beep('coin');
+          game.popups.push({ text: '🔑 Gate open!', x: it.x, y: it.y, life: 1.6 });
+          spawnParticles(28 * TILE + TILE / 2, 11 * TILE, '#fbbf24', 16);
+        }
+      }
+    }
+
+    // Hazards
+    if (metroid.invTimer <= 0 && !KQ_SETTINGS.get('invincibleMode') && _mTouchHazard()) _mHurt();
+
+    // Enemies
+    for (const e of metroid.enemies) {
+      if (!e.alive) continue;
+      e.x += e.dir * e.spd * dt;
+      if (e.x <= e.minX) { e.x = e.minX; e.dir = 1; }
+      if (e.x >= e.maxX) { e.x = e.maxX; e.dir = -1; }
+      if (_brawlerOverlap(metroid.px, metroid.py, M_PW, M_PH, e.x, e.y, e.w, e.h)) {
+        if (metroid.vy > 0 && metroid.py + M_PH < e.y + e.h * 0.6) {
+          e.alive = false; metroid.vy = -G_JUMP() * 0.6;
+          metroid.score += 100; game.score = metroid.score; beep('stomp');
+          spawnParticles(e.x + e.w / 2, e.y, '#f97316', 8);
+          game.popups.push({ text: '+100', x: e.x, y: e.y, life: 0.8 });
+        } else if (metroid.invTimer <= 0 && !KQ_SETTINGS.get('invincibleMode')) {
+          _mHurt();
+        }
+      }
+    }
+
+    // Goal
+    if (metroid.goal && _brawlerOverlap(metroid.px, metroid.py, M_PW, M_PH, metroid.goal.x, metroid.goal.y, metroid.goal.w, metroid.goal.h)) {
+      mode = 'win'; beep('win');
+      spawnParticles(metroid.goal.x + metroid.goal.w / 2, metroid.goal.y, '#fbbf24', 24);
+    }
+
+    // Camera follows the player both axes
+    metroid.camX = Math.max(0, Math.min(metroid.worldW - VIEW_W, metroid.px + M_PW / 2 - VIEW_W / 2));
+    metroid.camY = Math.max(0, Math.min(metroid.worldH - VIEW_H, metroid.py + M_PH / 2 - VIEW_H / 2));
+
+    updateEffects(dt);
+  }
+
+  function renderMetroid() {
+    const ASSETS = window.KQ_ASSETS || {};
+    if (!drawImg((ASSETS.backgrounds || {}).bg_cave, 0, 0, VIEW_W, VIEW_H)) {
+      const g = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+      g.addColorStop(0, '#1e1b4b'); g.addColorStop(1, '#312e81');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
+
+    ctx.save();
+    ctx.translate(Math.round(-metroid.camX), Math.round(-metroid.camY));
+
+    const t = ASSETS.tiles || {};
+    const x0 = Math.max(0, Math.floor(metroid.camX / TILE));
+    const x1 = Math.min(metroid.cols - 1, Math.ceil((metroid.camX + VIEW_W) / TILE));
+    const y0 = Math.max(0, Math.floor(metroid.camY / TILE));
+    const y1 = Math.min(metroid.rows - 1, Math.ceil((metroid.camY + VIEW_H) / TILE));
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+      const v = metroid.grid[ty][tx]; if (!v) continue;
+      const x = tx * TILE, y = ty * TILE;
+      if (v === M_SOLID) {
+        if (!drawImg(t.ground, x, y, TILE, TILE)) {
+          ctx.fillStyle = '#4338ca'; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = '#6366f1'; ctx.fillRect(x, y, TILE, 6);
+        }
+      } else if (v === M_DOOR) {
+        if (metroid.doorOpen) continue;
+        if (!drawImg(t.brick, x, y, TILE, TILE)) { ctx.fillStyle = '#b45309'; ctx.fillRect(x, y, TILE, TILE); }
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x + TILE * 0.3, y + 4, TILE * 0.4, TILE - 8);
+      } else if (v === M_SPIKE) {
+        if (!drawImg(t.spike, x, y, TILE, TILE)) {
+          ctx.fillStyle = '#cbd5e1'; ctx.beginPath();
+          ctx.moveTo(x, y + TILE); ctx.lineTo(x + TILE / 2, y + TILE * 0.15); ctx.lineTo(x + TILE, y + TILE); ctx.fill();
+        }
+      }
+    }
+
+    // Items
+    for (const it of metroid.items) {
+      if (it.taken) continue;
+      const bob = Math.sin(metroid.anim * 4) * 4;
+      if (it.type === 'djump') {
+        if (!drawImg((ASSETS.items || {}).doubleJump, it.x, it.y + bob, it.w, it.h)) {
+          ctx.fillStyle = '#22d3ee'; ctx.beginPath();
+          ctx.arc(it.x + it.w / 2, it.y + it.h / 2 + bob, it.w / 2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#0e7490'; ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'center';
+          ctx.fillText('⏫', it.x + it.w / 2, it.y + it.h / 2 + 8 + bob);
+        }
+      } else if (it.type === 'key') {
+        if (!drawImg((ASSETS.items || {}).coin, it.x, it.y + bob, it.w, it.h)) {
+          ctx.font = '30px serif'; ctx.textAlign = 'center';
+          ctx.fillText('🔑', it.x + it.w / 2, it.y + it.h + bob);
+        }
+      }
+    }
+
+    // Goal flag
+    if (metroid.goal) {
+      const gg = metroid.goal;
+      if (!drawImg(t.goal, gg.x, gg.y, gg.w, gg.h)) {
+        ctx.fillStyle = '#64748b'; ctx.fillRect(gg.x + gg.w / 2 - 3, gg.y, 6, gg.h);
+        ctx.fillStyle = '#22c55e'; ctx.fillRect(gg.x + gg.w / 2 + 3, gg.y + 6, 30, 20);
+      }
+    }
+
+    // Enemies
+    for (const e of metroid.enemies) {
+      if (!e.alive) continue;
+      if (!drawImg((ASSETS.enemies || {}).walker, e.x, e.y, e.w, e.h, { flip: e.dir < 0 })) {
+        ctx.fillStyle = '#f97316'; ctx.fillRect(e.x, e.y, e.w, e.h);
+      }
+    }
+
+    // Player
+    let frame = (ASSETS.player || {}).idle;
+    if (metroid.hurtTimer > 0) frame = (ASSETS.player || {}).hurt;
+    else if (!metroid.onGround) frame = (ASSETS.player || {}).jump;
+    else if (Math.abs(metroid.vx) > 10) frame = Math.floor(metroid.anim * 8) % 2 === 0 ? (ASSETS.player || {}).run1 : (ASSETS.player || {}).run2;
+    const blink = metroid.invTimer > 0 && Math.floor(metroid.invTimer * 12) % 2 === 0;
+    if (!blink) {
+      const tint = KQ_SETTINGS.get('tintPlayer');
+      drawWithTint(tint, metroid.px - 8, metroid.py - 8, M_PW + 16, M_PH + 8, () => {
+        if (!drawImg(frame, metroid.px - 8, metroid.py - 8, M_PW + 16, M_PH + 8, { flip: metroid.dir < 0 })) {
+          ctx.fillStyle = '#3b82f6'; ctx.fillRect(metroid.px, metroid.py, M_PW, M_PH);
+        }
+      });
+    }
+
+    drawEffects();
+    ctx.restore();
+
+    // HUD
+    ctx.textAlign = 'left'; ctx.font = 'bold 18px system-ui';
+    ctx.fillStyle = '#fbbf24'; ctx.fillText(`⭐ ${metroid.score}`, 16, 28);
+    ctx.fillStyle = '#ef4444'; ctx.fillText(`❤️ ${metroid.lives}`, 16, 52);
+    ctx.font = '20px system-ui';
+    ctx.fillStyle = metroid.hasDoubleJump ? '#22d3ee' : 'rgba(255,255,255,0.18)'; ctx.fillText('⏫', 16, 80);
+    ctx.fillStyle = metroid.hasKey ? '#fbbf24' : 'rgba(255,255,255,0.18)'; ctx.fillText('🔑', 50, 80);
+
+    if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${metroid.score}`, 'Press Enter or Tap to Try Again');
+    if (mode === 'win')      drawOverlay('You Escaped! 🎉', `Score: ${metroid.score}`, 'Press Enter or Tap to Play Again');
+  }
+
   function drawBackground() {
     const ASSETS = window.KQ_ASSETS || {};
     const bgKey  = currentLevel && currentLevel.bgKey;
@@ -2194,6 +2505,7 @@
         const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
         if (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
         else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
+        else if (gmode === 'metroid') { _metroidInit(); mode = 'playing'; }
         else { resetLevel(true); mode = "playing"; }
       } },
     { label: "🏠 Main Menu",    action: () => { mode = "menu"; _showMenuPanel(); } },
@@ -2355,6 +2667,8 @@
         updateShooter(dt);
       } else if (gmode === 'brawler') {
         updateBrawler(dt);
+      } else if (gmode === 'metroid') {
+        updateMetroid(dt);
       } else {
         updateMovingPlatforms(dt);
         updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
@@ -2392,6 +2706,13 @@
 
     if (gmode === 'brawler' && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
       renderBrawler();
+      if (mode === 'paused') drawPauseMenu();
+      drawHintPopup();
+      return;
+    }
+
+    if (gmode === 'metroid' && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
+      renderMetroid();
       if (mode === 'paused') drawPauseMenu();
       drawHintPopup();
       return;
