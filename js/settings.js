@@ -71,6 +71,4 @@ const KQ_SETTINGS = (() => {
   return { get, set, reset, getAll, save };
 })();
 
-// Top-level `const` does not attach to window. Expose explicitly so the
-// external genre modules (kart/puzzle/dungeon) and sounds.js can read settings.
 window.KQ_SETTINGS = KQ_SETTINGS;
