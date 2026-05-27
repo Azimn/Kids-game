@@ -2974,24 +2974,40 @@
     });
 
     const fullscreenBtn = document.getElementById('btn-fullscreen');
-    if (fullscreenBtn) fullscreenBtn.addEventListener('click', async () => {
-      beep('menu');
-      const shell = document.getElementById('gameShell');
-      try {
-        if (!document.fullscreenElement && shell && shell.requestFullscreen) {
-          await shell.requestFullscreen();
-          fullscreenBtn.textContent = 'Small Screen';
-        } else if (document.exitFullscreen) {
-          await document.exitFullscreen();
-          fullscreenBtn.textContent = 'Big Screen';
-        }
-      } catch (err) {
-        _showNoticePanel('Big Screen', ['Your browser did not allow fullscreen this time.']);
+    const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (fullscreenBtn) {
+      // iOS Safari blocks requestFullscreen; show a home-screen tip instead.
+      if (_isIOS) {
+        fullscreenBtn.textContent = 'Add to Home Screen';
+        fullscreenBtn.addEventListener('click', () => {
+          beep('menu');
+          _showNoticePanel('Play Fullscreen on iPhone', [
+            'Tap the Share button (the box with an arrow) at the bottom of Safari.',
+            'Then choose "Add to Home Screen".',
+            'Open the app icon for a fullscreen game!'
+          ], 'Got it');
+        });
+      } else {
+        fullscreenBtn.addEventListener('click', async () => {
+          beep('menu');
+          const shell = document.getElementById('gameShell');
+          try {
+            if (!document.fullscreenElement && shell && shell.requestFullscreen) {
+              await shell.requestFullscreen();
+              fullscreenBtn.textContent = 'Small Screen';
+            } else if (document.exitFullscreen) {
+              await document.exitFullscreen();
+              fullscreenBtn.textContent = 'Big Screen';
+            }
+          } catch (err) {
+            _showNoticePanel('Big Screen', ['Your browser did not allow fullscreen this time.']);
+          }
+        });
+        document.addEventListener('fullscreenchange', () => {
+          if (fullscreenBtn) fullscreenBtn.textContent = document.fullscreenElement ? 'Small Screen' : 'Big Screen';
+        });
       }
-    });
-    document.addEventListener('fullscreenchange', () => {
-      if (fullscreenBtn) fullscreenBtn.textContent = document.fullscreenElement ? 'Small Screen' : 'Big Screen';
-    });
+    }
 
     const settingsBackBtn = document.getElementById('btn-settings-back');
     if (settingsBackBtn) settingsBackBtn.addEventListener('click', () => {
