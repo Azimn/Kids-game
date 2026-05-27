@@ -36,6 +36,7 @@
   let mode        = "menu";  // title | menu | playing | paused | editor | settings | gameover | win | levelselect
   let levelIndex  = 0;
   let playtestReturnMode = null;
+  let frameworkInputLock = 0;
 
   // Settings panel state
   let settingsSliders = {};
@@ -182,8 +183,10 @@
   }
 
   function beep(type = "coin") {
-    // Delegate to ZzFX sounds if loaded, fall back to basic oscillator
-    if (window.KQ_SFX) { window.KQ_SFX(type); return; }
+    if (window.KQ_SFX && window.KQ_SFX !== beep) {
+      window.KQ_SFX(type);
+      return;
+    }
     if (!audioCtx) return;
     const vol = KQ_SETTINGS.get('sfxVolume');
     const now = audioCtx.currentTime;
@@ -220,28 +223,34 @@
   window.addEventListener("keydown", (e) => {
     const code = e.key.toLowerCase();
     if ([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(code)) e.preventDefault();
+    const topDownInput = _isFrameworkMode(KQ_SETTINGS.get('gameMode') || 'platformer');
 
     if (mode === "editor") { KQ_EDITOR.handleKey(e); return; }
 
     if (hintPopup) { dismissHint(); return; }
     if (code === "enter" || code === " ") ensureAudio(), handleStart();
     if (code === "p" || code === "escape") handlePause();
-    if (code === "r") { ensureAudio(); resetLevel(true); mode = "playing"; }
+    if (code === "r") { ensureAudio(); restartCurrentMode(); }
 
     if (code === "arrowleft"  || code === "a") keys.left  = true;
     if (code === "arrowright" || code === "d") keys.right = true;
-    if (code === "arrowup"    || code === "w" || code === " ") keys.jump = true;
+    if (code === "arrowup"    || code === "w") keys.up = true;
+    if (code === "arrowdown"  || code === "s") keys.down = true;
+    if ((!topDownInput && (code === "arrowup" || code === "w")) || code === " " || code === "z" || code === "enter") keys.jump = true;
     if (code === "x"          || code === "k") keys.shoot = true;
-    if (code === "shift"      || code === "j") keys.dash  = true;
+    if (code === "shift"      || code === "j" || code === "c") keys.dash  = true;
   }, { passive: false });
 
   window.addEventListener("keyup", (e) => {
     const code = e.key.toLowerCase();
+    const topDownInput = _isFrameworkMode(KQ_SETTINGS.get('gameMode') || 'platformer');
     if (code === "arrowleft"  || code === "a") keys.left  = false;
     if (code === "arrowright" || code === "d") keys.right = false;
-    if (code === "arrowup"    || code === "w" || code === " ") keys.jump = false;
+    if (code === "arrowup"    || code === "w") keys.up = false;
+    if (code === "arrowdown"  || code === "s") keys.down = false;
+    if ((!topDownInput && (code === "arrowup" || code === "w")) || code === " " || code === "z" || code === "enter") keys.jump = false;
     if (code === "x"          || code === "k") keys.shoot = false;
-    if (code === "shift"      || code === "j") keys.dash  = false;
+    if (code === "shift"      || code === "j" || code === "c") keys.dash  = false;
   });
 
   // Touch overlay buttons
@@ -249,7 +258,11 @@
     const name = button.dataset.touch;
     const down = (e) => {
       e.preventDefault(); ensureAudio(); touch[name] = true;
+      if (name === "left") touch.right = false;
+      if (name === "right") touch.left = false;
       button.classList.add("isDown");
+      if (name === "left") document.querySelector('[data-touch="right"]')?.classList.remove("isDown");
+      if (name === "right") document.querySelector('[data-touch="left"]')?.classList.remove("isDown");
       if (mode !== "playing" && (name === "jump" || name === "shoot")) handleStart();
     };
     const up = (e) => { e.preventDefault(); touch[name] = false; button.classList.remove("isDown"); };
@@ -301,42 +314,67 @@
       } else if (gmode === 'brawler') {
         _brawlerInit();
         mode = 'playing';
-      } else if (gmode === 'metroid') {
-        _metroidInit(); mode = 'playing';
-      } else if (gmode === 'kart')   { window.KQ_KART  && KQ_KART.init();  mode = 'playing';
-      } else if (gmode === 'zelda')  { window.KQ_ZELDA && KQ_ZELDA.init(); mode = 'playing';
-      } else if (gmode === 'rpg')    { window.KQ_RPG   && KQ_RPG.init();   mode = 'playing';
+      } else if (_isFrameworkMode(gmode)) {
+        _frameworkInit(gmode);
+        mode = 'playing';
       } else {
         mode = "levelselect";
       }
       return;
     }
     if (mode === "menu") {
-      _hideAllPanels();
-      const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
-      if      (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
-      else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
-      else if (gmode === 'metroid') { _metroidInit(); mode = 'playing'; }
-      else if (gmode === 'kart')    { window.KQ_KART  && KQ_KART.init();  mode = 'playing'; }
-      else if (gmode === 'zelda')   { window.KQ_ZELDA && KQ_ZELDA.init(); mode = 'playing'; }
-      else if (gmode === 'rpg')     { window.KQ_RPG   && KQ_RPG.init();   mode = 'playing'; }
-      else { mode = "levelselect"; }
       return;
     }
     if (mode === "gameover" || mode === "win") {
-      const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
-      if      (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
-      else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
-      else if (gmode === 'metroid') { _metroidInit(); mode = 'playing'; }
-      else if (gmode === 'kart')    { window.KQ_KART  && KQ_KART.init();  mode = 'playing'; }
-      else if (gmode === 'zelda')   { window.KQ_ZELDA && KQ_ZELDA.init(); mode = 'playing'; }
-      else if (gmode === 'rpg')     { window.KQ_RPG   && KQ_RPG.init();   mode = 'playing'; }
-      else { resetLevel(true); mode = "playing"; }
+      restartCurrentMode();
+    }
+  }
+  function restartCurrentMode() {
+    const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
+    if (gmode === 'shooter') {
+      _shooterInit();
+      mode = 'playing';
+    } else if (gmode === 'brawler') {
+      _brawlerInit();
+      mode = 'playing';
+    } else if (_isFrameworkMode(gmode)) {
+      _frameworkInit(gmode);
+      mode = 'playing';
+    } else {
+      resetLevel(true);
+      mode = 'playing';
     }
   }
   function handlePause() {
     if (mode === "playing") { mode = "paused"; pauseHover = -1; }
     else if (mode === "paused") mode = "playing";
+  }
+
+  function _isFrameworkMode(gmode) {
+    return gmode === 'puzzle' || gmode === 'dungeon' || gmode === 'racer';
+  }
+
+  function _getFrameworkModule(gmode) {
+    if (gmode === 'puzzle') return window.KQ_ZELDA;
+    if (gmode === 'dungeon') return window.KQ_RPG;
+    if (gmode === 'racer') return window.KQ_KART;
+    return null;
+  }
+
+  function _frameworkInit(gmode) {
+    const module = _getFrameworkModule(gmode);
+    if (!module || typeof module.init !== 'function') {
+      alert('This game type is still loading. Try again in a second.');
+      mode = 'menu';
+      _showMenuPanel();
+      return;
+    }
+    game.score = 0;
+    game.particles.length = 0;
+    game.popups.length = 0;
+    game.projectiles.length = 0;
+    frameworkInputLock = 0.25;
+    module.init();
   }
 
   // ── Level reset ────────────────────────────────────────────
@@ -926,23 +964,26 @@
   function drawBoss() {
     if (!boss || !boss.alive) return;
     const bx = boss.x - cameraX;
-    // Body
-    ctx.fillStyle = '#dc2626';
-    ctx.fillRect(bx, boss.y, boss.w, boss.h);
-    // Eyes
-    const eyeOff = Math.sin(boss.anim * 4) * 3;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(bx + 14, boss.y + 18 + eyeOff, 14, 14);
-    ctx.fillRect(bx + 52, boss.y + 18 + eyeOff, 14, 14);
-    ctx.fillStyle = '#111';
-    ctx.fillRect(bx + 18, boss.y + 22 + eyeOff, 8, 8);
-    ctx.fillRect(bx + 56, boss.y + 22 + eyeOff, 8, 8);
-    // Label
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillText('BOSS', bx + boss.w/2, boss.y + boss.h - 8);
-    ctx.textAlign = 'left';
+    const bossArt = (ASSETS.enemies||{}).boss || (ASSETS.enemies||{}).walker;
+    if (!drawImg(bossArt, bx, boss.y, boss.w, boss.h)) {
+      // Body
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(bx, boss.y, boss.w, boss.h);
+      // Eyes
+      const eyeOff = Math.sin(boss.anim * 4) * 3;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(bx + 14, boss.y + 18 + eyeOff, 14, 14);
+      ctx.fillRect(bx + 52, boss.y + 18 + eyeOff, 14, 14);
+      ctx.fillStyle = '#111';
+      ctx.fillRect(bx + 18, boss.y + 22 + eyeOff, 8, 8);
+      ctx.fillRect(bx + 56, boss.y + 22 + eyeOff, 8, 8);
+      // Label
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('BOSS', bx + boss.w/2, boss.y + boss.h - 8);
+      ctx.textAlign = 'left';
+    }
 
     // Boss health bar (at top-center of screen)
     ctx.save(); ctx.setTransform(1,0,0,1,0,0);
@@ -1265,7 +1306,8 @@
     // Boss
     if (shooter.bossActive && shooter.bossHp > 0) {
       const bx = shooter.bossX, by = shooter.bossY;
-      if (!drawImg((ASSETS.enemies||{}).walker, bx, by, 100, 80)) {
+      const bossArt = (ASSETS.enemies||{}).boss || (ASSETS.enemies||{}).walker;
+      if (!drawImg(bossArt, bx, by, 100, 80)) {
         ctx.fillStyle = '#dc2626'; ctx.fillRect(bx, by, 100, 80);
         ctx.fillStyle = '#fff';
         ctx.fillRect(bx + 15, by + 20, 14, 14);
@@ -1362,7 +1404,7 @@
     hurtTimer: 0,
     invTimer: 0,
     bossActive: false,
-    bossHp: 0, bossMaxHp: 30,
+    bossHp: 0, bossMaxHp: 18,
     bossX: 700, bossY: 300,
     bossDir: -1, bossAnim: 0,
     bossPunchTimer: 0, bossMoveTimer: 0,
@@ -1386,7 +1428,7 @@
       score: 0, wave: 0, waveTimer: 2.5, waveClearing: false,
       enemies: [], scrollX: 0, scrollTarget: 0,
       hurtTimer: 0, invTimer: 0,
-      bossActive: false, bossHp: 30,
+      bossActive: false, bossHp: 18,
       bossX: 900, bossY: 300, bossDir: -1, bossAnim: 0,
       bossPunchTimer: 0, bossMoveTimer: 1,
     });
@@ -1442,8 +1484,10 @@
     // Player movement
     const spd = 220 * KQ_SETTINGS.get('speedMult');
     let mvx = 0, mvy = 0;
-    if (pressed('left'))  { mvx = -spd; brawler.playerDir = -1; }
-    if (pressed('right')) { mvx =  spd; brawler.playerDir =  1; }
+    const moveLeft = pressed('left');
+    const moveRight = pressed('right');
+    if (moveLeft && !moveRight)  { mvx = -spd; brawler.playerDir = -1; }
+    if (moveRight && !moveLeft) { mvx =  spd; brawler.playerDir =  1; }
     if (pressed('jump') && !brawler._jumpHeld) {
       if (brawler.onGround) { brawler.jumpVy = -520 * KQ_SETTINGS.get('jumpMult'); brawler.onGround = false; beep('jump'); }
       brawler._jumpHeld = true;
@@ -1456,6 +1500,8 @@
 
     brawler.playerX += mvx * dt;
     brawler.playerY += mvy * dt;
+    brawler.playerVx = mvx;
+    brawler.playerVy = mvy;
 
     // Jump physics (Z axis)
     if (!brawler.onGround) {
@@ -1622,7 +1668,14 @@
     const ASSETS = window.KQ_ASSETS || {};
 
     // Scrolling background
-    const bgDrawn = drawImg((ASSETS.backgrounds||{}).bg_meadow, -brawler.scrollX % VIEW_W, 0, VIEW_W, VIEW_H);
+    const bgPath = (ASSETS.backgrounds||{}).bg_meadow;
+    const bgOffset = ((-brawler.scrollX % VIEW_W) + VIEW_W) % VIEW_W - VIEW_W;
+    let bgDrawn = false;
+    if (bgPath) {
+      for (let x = bgOffset; x < VIEW_W; x += VIEW_W) {
+        bgDrawn = drawImg(bgPath, x, 0, VIEW_W, VIEW_H) || bgDrawn;
+      }
+    }
     if (!bgDrawn) {
       // Painted city/street fallback
       const sky = ctx.createLinearGradient(0, 0, 0, VIEW_H);
@@ -1728,7 +1781,8 @@
         ctx.beginPath(); ctx.ellipse(bx + bw/2, by + bh + 2, bw/2, 8, 0, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1;
 
-        if (!drawImg((ASSETS.enemies||{}).walker, bx, by, bw, bh, { flip: brawler.bossDir < 0 })) {
+        const bossArt = (ASSETS.enemies||{}).boss || (ASSETS.enemies||{}).walker;
+        if (!drawImg(bossArt, bx, by, bw, bh, { flip: brawler.bossDir < 0 })) {
           ctx.fillStyle = '#dc2626'; ctx.fillRect(bx, by, bw, bh);
           ctx.fillStyle = '#111';
           ctx.fillRect(bx + (brawler.bossDir > 0 ? 38 : 12), by + 16, 10, 10);
@@ -1770,312 +1824,6 @@
     if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${brawler.score}`, 'Press Enter or Tap to Try Again');
     if (mode === 'win')      drawOverlay('You Win! 🎉', `Score: ${brawler.score}`, 'Press Enter or Tap to Play Again');
   }
-
-  // ── Metroidvania genre state ───────────────────────────────
-  // Side-view explore-and-unlock: grab the double-jump to reach the
-  // key, the key opens the gate, the gate leads to the exit.
-  const metroid = {
-    grid: [], cols: 0, rows: 0, worldW: 0, worldH: 0,
-    px: 0, py: 0, vx: 0, vy: 0, dir: 1, anim: 0,
-    onGround: false, jumpsLeft: 1, jumpHeld: false,
-    hasDoubleJump: false, hasKey: false, doorOpen: false,
-    items: [], enemies: [], goal: null,
-    camX: 0, camY: 0,
-    lives: 3, score: 0, hurtTimer: 0, invTimer: 0,
-  };
-  const M_PW = 40, M_PH = 56;   // player hitbox
-  const M_SOLID = 1, M_DOOR = 2, M_SPIKE = 3;
-
-  function _metroidBuildMap() {
-    const COLS = 48, ROWS = 16;
-    const g = [];
-    for (let y = 0; y < ROWS; y++) g.push(new Array(COLS).fill(0));
-    const fill = (x0, y0, x1, y1, v) => {
-      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = v;
-    };
-    fill(0, 14, COLS - 1, 15, M_SOLID);   // floor
-    fill(0, 0, 0, 15, M_SOLID);           // left wall
-    fill(COLS - 1, 0, COLS - 1, 15, M_SOLID); // right wall
-    fill(0, 0, COLS - 1, 0, M_SOLID);     // ceiling
-    // climbing platforms (left explore area)
-    fill(4, 12, 7, 12, M_SOLID);
-    fill(10, 10, 13, 10, M_SOLID);
-    fill(16, 6, 20, 6, M_SOLID);          // high key ledge — needs double jump
-    // locked gate at col 28
-    fill(28, 1, 28, 7, M_SOLID);          // permanent wall (can't jump over)
-    fill(28, 8, 28, 13, M_DOOR);          // openable door
-    // spike pit beyond the gate
-    g[13][32] = M_SPIKE; g[13][33] = M_SPIKE;
-    return { g, COLS, ROWS };
-  }
-
-  function _mEnemy(tx, minTx, maxTx) {
-    const w = 40, h = 44;
-    return {
-      x: tx * TILE + 4, y: 14 * TILE - h, w, h,
-      dir: 1, spd: G_ENEMY() * 1.4, alive: true,
-      minX: minTx * TILE, maxX: maxTx * TILE,
-    };
-  }
-
-  function _metroidInit() {
-    const { g, COLS, ROWS } = _metroidBuildMap();
-    Object.assign(metroid, {
-      grid: g, cols: COLS, rows: ROWS,
-      worldW: COLS * TILE, worldH: ROWS * TILE,
-      px: 2 * TILE, py: 14 * TILE - M_PH,
-      vx: 0, vy: 0, dir: 1, anim: 0,
-      onGround: true, jumpsLeft: 1, jumpHeld: false,
-      hasDoubleJump: false, hasKey: false, doorOpen: false,
-      lives: KQ_SETTINGS.get('infiniteLives') ? 99 : KQ_SETTINGS.get('startLives'),
-      score: 0, hurtTimer: 0, invTimer: 0, camX: 0, camY: 0,
-      items: [
-        { type: 'djump', x: 11 * TILE + 4, y: 9 * TILE + 4, w: 40, h: 40, taken: false },
-        { type: 'key',   x: 18 * TILE + 8, y: 5 * TILE + 8, w: 32, h: 32, taken: false },
-      ],
-      enemies: [_mEnemy(14, 9, 19), _mEnemy(37, 35, 40), _mEnemy(43, 41, 44)],
-      goal: { x: 45 * TILE, y: 12 * TILE, w: TILE, h: TILE * 2 },
-    });
-    game.particles = []; game.popups = []; game.projectiles = []; game.score = 0;
-    showHint('metroid', [
-      '🗺️ Explore mode! Find hidden powers to open new paths.',
-      '',
-      'Move: Arrow Keys / WASD     Jump: Space / Up / A',
-      '',
-      '⏫ Grab the DOUBLE JUMP to reach high places (jump twice!).',
-      '🔑 Find the KEY — it opens the big locked gate.',
-      '🏁 Then reach the flag at the far side to escape!',
-      '',
-      '🎨 Art tip: Your hero is seen from the SIDE here too.',
-      '',
-      '      Tap or press any key to close this tip',
-    ]);
-  }
-
-  function _mSolid(tx, ty) {
-    if (tx < 0 || tx >= metroid.cols || ty >= metroid.rows) return true;
-    if (ty < 0) return false;
-    const v = metroid.grid[ty][tx];
-    return v === M_SOLID || (v === M_DOOR && !metroid.doorOpen);
-  }
-
-  function _mCollideX() {
-    const top = Math.floor(metroid.py / TILE), bottom = Math.floor((metroid.py + M_PH - 1) / TILE);
-    if (metroid.vx > 0) {
-      const right = Math.floor((metroid.px + M_PW - 1) / TILE);
-      for (let ty = top; ty <= bottom; ty++) if (_mSolid(right, ty)) { metroid.px = right * TILE - M_PW; metroid.vx = 0; break; }
-    } else if (metroid.vx < 0) {
-      const left = Math.floor(metroid.px / TILE);
-      for (let ty = top; ty <= bottom; ty++) if (_mSolid(left, ty)) { metroid.px = (left + 1) * TILE; metroid.vx = 0; break; }
-    }
-  }
-
-  function _mCollideY() {
-    metroid.onGround = false;
-    const left = Math.floor(metroid.px / TILE), right = Math.floor((metroid.px + M_PW - 1) / TILE);
-    if (metroid.vy > 0) {
-      const bottom = Math.floor((metroid.py + M_PH - 1) / TILE);
-      for (let tx = left; tx <= right; tx++) if (_mSolid(tx, bottom)) { metroid.py = bottom * TILE - M_PH; metroid.vy = 0; metroid.onGround = true; break; }
-    } else if (metroid.vy < 0) {
-      const top = Math.floor(metroid.py / TILE);
-      for (let tx = left; tx <= right; tx++) if (_mSolid(tx, top)) { metroid.py = (top + 1) * TILE; metroid.vy = 0; break; }
-    }
-  }
-
-  function _mTouchHazard() {
-    const left = Math.floor(metroid.px / TILE), right = Math.floor((metroid.px + M_PW - 1) / TILE);
-    const top = Math.floor(metroid.py / TILE), bottom = Math.floor((metroid.py + M_PH - 1) / TILE);
-    for (let ty = top; ty <= bottom; ty++) for (let tx = left; tx <= right; tx++) {
-      if (ty >= 0 && ty < metroid.rows && tx >= 0 && tx < metroid.cols && metroid.grid[ty][tx] === M_SPIKE) return true;
-    }
-    return false;
-  }
-
-  function _mHurt() {
-    metroid.lives--; metroid.hurtTimer = 0.4; metroid.invTimer = 1.2;
-    metroid.vy = -G_JUMP() * 0.4; screenShake = 8; beep('hurt');
-    if (metroid.lives <= 0) mode = 'gameover';
-  }
-
-  function updateMetroid(dt) {
-    metroid.anim += dt;
-    metroid.hurtTimer = Math.max(0, metroid.hurtTimer - dt);
-    metroid.invTimer  = Math.max(0, metroid.invTimer  - dt);
-
-    const spd = G_SPEED();
-    metroid.vx = 0;
-    if (pressed('left'))  { metroid.vx = -spd; metroid.dir = -1; }
-    if (pressed('right')) { metroid.vx =  spd; metroid.dir =  1; }
-
-    const wantJump = pressed('jump') || pressed('up');
-    if (wantJump) {
-      if (!metroid.jumpHeld && metroid.jumpsLeft > 0) {
-        metroid.vy = -G_JUMP(); metroid.jumpsLeft--; metroid.onGround = false; beep('jump');
-        spawnParticles(metroid.px + M_PW / 2, metroid.py + M_PH, '#bae6fd', 4);
-      }
-      metroid.jumpHeld = true;
-    } else metroid.jumpHeld = false;
-
-    metroid.vy += G_GRAV() * dt;
-    if (metroid.vy > 1300) metroid.vy = 1300;
-
-    metroid.px += metroid.vx * dt; _mCollideX();
-    metroid.py += metroid.vy * dt; _mCollideY();
-    if (metroid.onGround) metroid.jumpsLeft = metroid.hasDoubleJump ? 2 : 1;
-    metroid.px = Math.max(0, Math.min(metroid.worldW - M_PW, metroid.px));
-
-    // Item pickups
-    for (const it of metroid.items) {
-      if (it.taken) continue;
-      if (_brawlerOverlap(metroid.px, metroid.py, M_PW, M_PH, it.x, it.y, it.w, it.h)) {
-        it.taken = true;
-        if (it.type === 'djump') {
-          metroid.hasDoubleJump = true; metroid.jumpsLeft = 2; beep('power');
-          game.popups.push({ text: 'Double Jump!', x: it.x, y: it.y, life: 1.4 });
-        } else if (it.type === 'key') {
-          metroid.hasKey = true; metroid.doorOpen = true; beep('coin');
-          game.popups.push({ text: '🔑 Gate open!', x: it.x, y: it.y, life: 1.6 });
-          spawnParticles(28 * TILE + TILE / 2, 11 * TILE, '#fbbf24', 16);
-        }
-      }
-    }
-
-    // Hazards
-    if (metroid.invTimer <= 0 && !KQ_SETTINGS.get('invincibleMode') && _mTouchHazard()) _mHurt();
-
-    // Enemies
-    for (const e of metroid.enemies) {
-      if (!e.alive) continue;
-      e.x += e.dir * e.spd * dt;
-      if (e.x <= e.minX) { e.x = e.minX; e.dir = 1; }
-      if (e.x >= e.maxX) { e.x = e.maxX; e.dir = -1; }
-      if (_brawlerOverlap(metroid.px, metroid.py, M_PW, M_PH, e.x, e.y, e.w, e.h)) {
-        if (metroid.vy > 0 && metroid.py + M_PH < e.y + e.h * 0.6) {
-          e.alive = false; metroid.vy = -G_JUMP() * 0.6;
-          metroid.score += 100; game.score = metroid.score; beep('stomp');
-          spawnParticles(e.x + e.w / 2, e.y, '#f97316', 8);
-          game.popups.push({ text: '+100', x: e.x, y: e.y, life: 0.8 });
-        } else if (metroid.invTimer <= 0 && !KQ_SETTINGS.get('invincibleMode')) {
-          _mHurt();
-        }
-      }
-    }
-
-    // Goal
-    if (metroid.goal && _brawlerOverlap(metroid.px, metroid.py, M_PW, M_PH, metroid.goal.x, metroid.goal.y, metroid.goal.w, metroid.goal.h)) {
-      mode = 'win'; beep('win');
-      spawnParticles(metroid.goal.x + metroid.goal.w / 2, metroid.goal.y, '#fbbf24', 24);
-    }
-
-    // Camera follows the player both axes
-    metroid.camX = Math.max(0, Math.min(metroid.worldW - VIEW_W, metroid.px + M_PW / 2 - VIEW_W / 2));
-    metroid.camY = Math.max(0, Math.min(metroid.worldH - VIEW_H, metroid.py + M_PH / 2 - VIEW_H / 2));
-
-    updateEffects(dt);
-  }
-
-  function renderMetroid() {
-    const ASSETS = window.KQ_ASSETS || {};
-    if (!drawImg((ASSETS.backgrounds || {}).bg_cave, 0, 0, VIEW_W, VIEW_H)) {
-      const g = ctx.createLinearGradient(0, 0, 0, VIEW_H);
-      g.addColorStop(0, '#1e1b4b'); g.addColorStop(1, '#312e81');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    }
-
-    ctx.save();
-    ctx.translate(Math.round(-metroid.camX), Math.round(-metroid.camY));
-
-    const t = ASSETS.tiles || {};
-    const x0 = Math.max(0, Math.floor(metroid.camX / TILE));
-    const x1 = Math.min(metroid.cols - 1, Math.ceil((metroid.camX + VIEW_W) / TILE));
-    const y0 = Math.max(0, Math.floor(metroid.camY / TILE));
-    const y1 = Math.min(metroid.rows - 1, Math.ceil((metroid.camY + VIEW_H) / TILE));
-    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-      const v = metroid.grid[ty][tx]; if (!v) continue;
-      const x = tx * TILE, y = ty * TILE;
-      if (v === M_SOLID) {
-        if (!drawImg(t.ground, x, y, TILE, TILE)) {
-          ctx.fillStyle = '#4338ca'; ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = '#6366f1'; ctx.fillRect(x, y, TILE, 6);
-        }
-      } else if (v === M_DOOR) {
-        if (metroid.doorOpen) continue;
-        if (!drawImg(t.brick, x, y, TILE, TILE)) { ctx.fillStyle = '#b45309'; ctx.fillRect(x, y, TILE, TILE); }
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x + TILE * 0.3, y + 4, TILE * 0.4, TILE - 8);
-      } else if (v === M_SPIKE) {
-        if (!drawImg(t.spike, x, y, TILE, TILE)) {
-          ctx.fillStyle = '#cbd5e1'; ctx.beginPath();
-          ctx.moveTo(x, y + TILE); ctx.lineTo(x + TILE / 2, y + TILE * 0.15); ctx.lineTo(x + TILE, y + TILE); ctx.fill();
-        }
-      }
-    }
-
-    // Items
-    for (const it of metroid.items) {
-      if (it.taken) continue;
-      const bob = Math.sin(metroid.anim * 4) * 4;
-      if (it.type === 'djump') {
-        if (!drawImg((ASSETS.items || {}).doubleJump, it.x, it.y + bob, it.w, it.h)) {
-          ctx.fillStyle = '#22d3ee'; ctx.beginPath();
-          ctx.arc(it.x + it.w / 2, it.y + it.h / 2 + bob, it.w / 2, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#0e7490'; ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'center';
-          ctx.fillText('⏫', it.x + it.w / 2, it.y + it.h / 2 + 8 + bob);
-        }
-      } else if (it.type === 'key') {
-        if (!drawImg((ASSETS.items || {}).coin, it.x, it.y + bob, it.w, it.h)) {
-          ctx.font = '30px serif'; ctx.textAlign = 'center';
-          ctx.fillText('🔑', it.x + it.w / 2, it.y + it.h + bob);
-        }
-      }
-    }
-
-    // Goal flag
-    if (metroid.goal) {
-      const gg = metroid.goal;
-      if (!drawImg(t.goal, gg.x, gg.y, gg.w, gg.h)) {
-        ctx.fillStyle = '#64748b'; ctx.fillRect(gg.x + gg.w / 2 - 3, gg.y, 6, gg.h);
-        ctx.fillStyle = '#22c55e'; ctx.fillRect(gg.x + gg.w / 2 + 3, gg.y + 6, 30, 20);
-      }
-    }
-
-    // Enemies
-    for (const e of metroid.enemies) {
-      if (!e.alive) continue;
-      if (!drawImg((ASSETS.enemies || {}).walker, e.x, e.y, e.w, e.h, { flip: e.dir < 0 })) {
-        ctx.fillStyle = '#f97316'; ctx.fillRect(e.x, e.y, e.w, e.h);
-      }
-    }
-
-    // Player
-    let frame = (ASSETS.player || {}).idle;
-    if (metroid.hurtTimer > 0) frame = (ASSETS.player || {}).hurt;
-    else if (!metroid.onGround) frame = (ASSETS.player || {}).jump;
-    else if (Math.abs(metroid.vx) > 10) frame = Math.floor(metroid.anim * 8) % 2 === 0 ? (ASSETS.player || {}).run1 : (ASSETS.player || {}).run2;
-    const blink = metroid.invTimer > 0 && Math.floor(metroid.invTimer * 12) % 2 === 0;
-    if (!blink) {
-      const tint = KQ_SETTINGS.get('tintPlayer');
-      drawWithTint(tint, metroid.px - 8, metroid.py - 8, M_PW + 16, M_PH + 8, () => {
-        if (!drawImg(frame, metroid.px - 8, metroid.py - 8, M_PW + 16, M_PH + 8, { flip: metroid.dir < 0 })) {
-          ctx.fillStyle = '#3b82f6'; ctx.fillRect(metroid.px, metroid.py, M_PW, M_PH);
-        }
-      });
-    }
-
-    drawEffects();
-    ctx.restore();
-
-    // HUD
-    ctx.textAlign = 'left'; ctx.font = 'bold 18px system-ui';
-    ctx.fillStyle = '#fbbf24'; ctx.fillText(`⭐ ${metroid.score}`, 16, 28);
-    ctx.fillStyle = '#ef4444'; ctx.fillText(`❤️ ${metroid.lives}`, 16, 52);
-    ctx.font = '20px system-ui';
-    ctx.fillStyle = metroid.hasDoubleJump ? '#22d3ee' : 'rgba(255,255,255,0.18)'; ctx.fillText('⏫', 16, 80);
-    ctx.fillStyle = metroid.hasKey ? '#fbbf24' : 'rgba(255,255,255,0.18)'; ctx.fillText('🔑', 50, 80);
-
-    if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${metroid.score}`, 'Press Enter or Tap to Try Again');
-    if (mode === 'win')      drawOverlay('You Escaped! 🎉', `Score: ${metroid.score}`, 'Press Enter or Tap to Play Again');
-  }
-
   function drawBackground() {
     const ASSETS = window.KQ_ASSETS || {};
     const bgKey  = currentLevel && currentLevel.bgKey;
@@ -2477,8 +2225,30 @@
     // Dismiss button
     const btnY = by + boxH - 36;
     ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 13px system-ui';
-    ctx.fillText('✅  Got it! Tap anywhere to close', VIEW_W/2, btnY);
+    ctx.fillText('Got it! Tap anywhere to close', VIEW_W/2, btnY);
     ctx.restore();
+  }
+
+  function _installFrameworkBridge() {
+    window._KQ_CTX = ctx;
+    window._KQ_GAME = game;
+    window._KQ_PRESSED = (name) => frameworkInputLock <= 0 && pressed(name);
+    window._KQ_BEEP = beep;
+    window._KQ_DRAW_IMG = drawImg;
+    window._KQ_FX_UPDATE = updateEffects;
+    window._KQ_FX_DRAW = drawEffects;
+    window._KQ_HINT = {
+      show: showHint,
+      draw: drawHintPopup
+    };
+    window._KQ_SETMODE = (nextMode) => {
+      if (nextMode === 'menu') {
+        mode = 'menu';
+        _showMenuPanel();
+      } else {
+        mode = nextMode;
+      }
+    };
   }
 
   function drawOverlay(title, subtitle, button) {
@@ -2503,25 +2273,16 @@
     const authorDisplay = KQ_SETTINGS.get('authorName');
     if (authorDisplay) {
       ctx.fillStyle = "#fbbf24"; ctx.font = "bold 15px system-ui";
-      ctx.fillText(`Made by ${authorDisplay} 🎮`, VIEW_W/2, 438);
+      ctx.fillText(`Made by ${authorDisplay}`, VIEW_W/2, 438);
     }
     ctx.restore();
   }
 
   // ── Pause menu (card with buttons) ────────────────────────
   const PAUSE_BTNS = [
-    { label: "▶ Resume",        action: () => { mode = "playing"; } },
-    { label: "🔄 Restart Level", action: () => {
-        const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
-        if      (gmode === 'shooter') { _shooterInit(); mode = 'playing'; }
-        else if (gmode === 'brawler') { _brawlerInit(); mode = 'playing'; }
-        else if (gmode === 'metroid') { _metroidInit(); mode = 'playing'; }
-        else if (gmode === 'kart')    { window.KQ_KART  && KQ_KART.init();  mode = 'playing'; }
-        else if (gmode === 'zelda')   { window.KQ_ZELDA && KQ_ZELDA.init(); mode = 'playing'; }
-        else if (gmode === 'rpg')     { window.KQ_RPG   && KQ_RPG.init();   mode = 'playing'; }
-        else { resetLevel(true); mode = "playing"; }
-      } },
-    { label: "🏠 Main Menu",    action: () => { mode = "menu"; _showMenuPanel(); } },
+    { label: "Resume",        action: () => { mode = "playing"; } },
+    { label: "Restart Level", action: () => { restartCurrentMode(); } },
+    { label: "Main Menu",     action: () => { mode = "menu"; _showMenuPanel(); } },
   ];
   const PAUSE_CARD = { x: 330, y: 160, w: 300, h: 220 };
   const PAUSE_BTN_H = 48;
@@ -2673,21 +2434,18 @@
   // ── Main loop ──────────────────────────────────────────────
   function update(dt) {
     game.time += dt;
+    frameworkInputLock = Math.max(0, frameworkInputLock - dt);
     KQ_GAMEPAD.poll();
     const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
     if (mode === "playing") {
-      if (gmode === 'shooter') {
+      if (_isFrameworkMode(gmode)) {
+        const module = _getFrameworkModule(gmode);
+        if (module && typeof module.update === 'function') module.update(dt);
+        updateEffects(dt);
+      } else if (gmode === 'shooter') {
         updateShooter(dt);
       } else if (gmode === 'brawler') {
         updateBrawler(dt);
-      } else if (gmode === 'metroid') {
-        updateMetroid(dt);
-      } else if (gmode === 'kart') {
-        window.KQ_KART && KQ_KART.update(dt);
-      } else if (gmode === 'zelda') {
-        window.KQ_ZELDA && KQ_ZELDA.update(dt);
-      } else if (gmode === 'rpg') {
-        window.KQ_RPG && KQ_RPG.update(dt);
       } else {
         updateMovingPlatforms(dt);
         updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
@@ -2716,6 +2474,13 @@
 
     const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
 
+    if (_isFrameworkMode(gmode) && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
+      const module = _getFrameworkModule(gmode);
+      if (module && typeof module.render === 'function') module.render();
+      if (mode === 'paused') drawPauseMenu();
+      return;
+    }
+
     if (gmode === 'shooter' && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
       renderShooter();
       if (mode === 'paused') drawPauseMenu();
@@ -2725,32 +2490,6 @@
 
     if (gmode === 'brawler' && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
       renderBrawler();
-      if (mode === 'paused') drawPauseMenu();
-      drawHintPopup();
-      return;
-    }
-
-    if (gmode === 'metroid' && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
-      renderMetroid();
-      if (mode === 'paused') drawPauseMenu();
-      drawHintPopup();
-      return;
-    }
-
-    if (gmode === 'kart' && window.KQ_KART && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
-      KQ_KART.render();
-      if (mode === 'paused') drawPauseMenu();
-      drawHintPopup();
-      return;
-    }
-    if (gmode === 'zelda' && window.KQ_ZELDA && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
-      KQ_ZELDA.render();
-      if (mode === 'paused') drawPauseMenu();
-      drawHintPopup();
-      return;
-    }
-    if (gmode === 'rpg' && window.KQ_RPG && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
-      KQ_RPG.render();
       if (mode === 'paused') drawPauseMenu();
       drawHintPopup();
       return;
@@ -2795,8 +2534,9 @@
   function _showSettingsPanel(){ _hideAllPanels(); document.getElementById('settingsPanel').style.display = 'flex'; }
   function _showEditorPanel()  { _hideAllPanels(); document.getElementById('editorPanel').style.display = 'flex'; }
   function _showArtPanel()     { _hideAllPanels(); document.getElementById('artPanel').style.display = 'flex'; }
+  function _showHowToPanel()   { _hideAllPanels(); document.getElementById('howToPanel').style.display = 'flex'; }
   function _hideAllPanels() {
-    ['menuPanel','settingsPanel','editorPanel','artPanel'].forEach(id => {
+    ['menuPanel','settingsPanel','editorPanel','artPanel','howToPanel'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -2807,6 +2547,9 @@
     const artBackBtn = document.getElementById('btn-art-back');
     if (artBackBtn) artBackBtn.addEventListener('click', () => { beep('menu'); _showMenuPanel(); });
 
+    const howToBackBtn = document.getElementById('btn-howto-back');
+    if (howToBackBtn) howToBackBtn.addEventListener('click', () => { beep('menu'); _showMenuPanel(); });
+
     // Build art manager UI
     const artContainer = document.getElementById('art-slots-container');
     if (artContainer && window.KQ_ART) KQ_ART.buildUI(artContainer);
@@ -2815,9 +2558,112 @@
     const btnArt = document.getElementById('btn-art');
     if (btnArt) btnArt.addEventListener('click', () => { beep('menu'); _showArtPanel(); });
 
+    const moreToolsBtn = document.getElementById('btn-more-tools');
+    const advancedDrawer = document.getElementById('advancedDrawer');
+    if (moreToolsBtn && advancedDrawer) {
+      moreToolsBtn.addEventListener('click', () => {
+        beep('menu');
+        const isOpen = advancedDrawer.classList.toggle('open');
+        moreToolsBtn.setAttribute('aria-expanded', String(isOpen));
+      });
+    }
+
     // ── Genre picker ───────────────────────────────────────
+    const GENRE_INFO = {
+      platformer: {
+        label: 'Platformer',
+        blurb: 'Run, jump, collect coins, and build your own levels.',
+        help: [
+          'Move: Arrow Keys or A / D',
+          'Jump: Space, W, or Up Arrow',
+          'Shoot: X after finding the Blaster',
+          'Dash: Shift after finding Dash',
+          'Goal: reach the flag'
+        ]
+      },
+      shooter: {
+        label: 'Space Shooter',
+        blurb: 'Fly a ship, dodge enemies, and blast the boss.',
+        help: [
+          'Move: Arrow Keys or WASD',
+          'Shoot: Space, Enter, or X',
+          'Goal: survive waves and defeat the boss',
+          'Tip: your Hero art becomes the ship'
+        ]
+      },
+      brawler: {
+        label: 'Beat-em-up',
+        blurb: 'Walk across the street, punch enemies, and defeat the big boss.',
+        help: [
+          'Move: Arrow Keys or WASD',
+          'Punch: X or B button',
+          'Jump: Space',
+          'Goal: beat the boss at the end'
+        ]
+      },
+      dungeon: {
+        label: 'Dungeon Adventure',
+        blurb: 'Pick a hero class, win turn-based battles, and unlock the stairs.',
+        help: [
+          'Choose a class, then press Space',
+          'Move: Arrow Keys or WASD',
+          'Battle menu: Up / Down',
+          'Choose action: Space, Enter, or X',
+          'Goal: defeat all guardians and reach the stairs'
+        ]
+      },
+      racer: {
+        label: 'Kart Racer',
+        blurb: 'Race laps, grab item boxes, and use boosts or shields.',
+        help: [
+          'Steer: Left / Right',
+          'Gas: Up or A button',
+          'Use item: X, B, or Dash',
+          'Goal: finish 3 laps'
+        ]
+      },
+      puzzle: {
+        label: 'Puzzle Room',
+        blurb: 'Explore rooms, push blocks, open chests, and escape.',
+        help: [
+          'Move: Arrow Keys or WASD',
+          'Sword: Space, Enter, or X',
+          'Push blocks by walking into them',
+          'Goal: find the key and escape'
+        ]
+      }
+    };
+
+    function _currentGenreInfo() {
+      const key = KQ_SETTINGS.get('gameMode') || 'platformer';
+      return GENRE_INFO[key] || GENRE_INFO.platformer;
+    }
+
+    function _buildHowToPanel() {
+      const info = _currentGenreInfo();
+      const title = document.getElementById('howto-title');
+      const hint = document.getElementById('howto-hint');
+      const body = document.getElementById('howto-body');
+      if (title) title.textContent = `${info.label} Controls`;
+      if (hint) hint.textContent = info.blurb;
+      if (!body) return;
+      const rows = info.help.concat(['Pause: P or Escape', 'Restart: R']);
+      body.innerHTML = rows.map(row => {
+        const parts = row.split(':');
+        const key = parts.length > 1 ? parts.shift().trim() : 'Tip';
+        const text = parts.join(':').trim() || row;
+        return `
+          <div class="howto-row">
+            <div class="howto-key">${key}</div>
+            <div class="howto-text">${text}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
     function _updateGenreBtns() {
       const cur = KQ_SETTINGS.get('gameMode') || 'platformer';
+      const info = _currentGenreInfo();
       document.querySelectorAll('.genre-btn').forEach(b => {
         b.style.background = b.dataset.genre === cur
           ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.08)';
@@ -2825,9 +2671,21 @@
           ? '#fbbf24' : 'rgba(255,255,255,0.15)';
         b.style.color = b.dataset.genre === cur ? '#fbbf24' : '#cbd5e1';
       });
+      const title = document.getElementById('genreInfoTitle');
+      const text = document.getElementById('genreInfoText');
+      if (title) title.textContent = info.label;
+      if (text) text.textContent = info.blurb;
+      const playSub = document.querySelector('#btn-play .kid-btn-sub');
+      if (playSub) playSub.textContent = `Start ${info.label}`;
       // Show/hide editor button based on genre (no editor for shooter)
       const edBtn = document.getElementById('btn-editor');
-      if (edBtn) edBtn.style.display = cur === 'platformer' ? '' : 'none';
+      if (edBtn) {
+        const disabled = cur !== 'platformer';
+        edBtn.disabled = disabled;
+        edBtn.classList.toggle('is-disabled', disabled);
+        const sub = edBtn.querySelector('.kid-btn-sub');
+        if (sub) sub.textContent = disabled ? 'Only for Platformer' : 'Build your world';
+      }
     }
     document.querySelectorAll('.genre-btn').forEach(b => {
       b.addEventListener('click', () => {
@@ -2848,6 +2706,10 @@
 
     const editorBtn = document.getElementById('btn-editor');
     if (editorBtn) editorBtn.addEventListener('click', () => {
+      if ((KQ_SETTINGS.get('gameMode') || 'platformer') !== 'platformer') {
+        alert('Level editor is for Platformer games. Switch Game Type to Platformer in More Tools to build levels.');
+        return;
+      }
       beep('menu'); mode = 'editor';
       KQ_EDITOR.show();
       _showEditorPanel();
@@ -2866,26 +2728,10 @@
     const howToPlayBtn = document.getElementById('btn-howtoplay');
     if (howToPlayBtn) howToPlayBtn.addEventListener('click', () => {
       beep('menu');
-      alert(
-        "🎮 HOW TO PLAY\n\n" +
-        "Move:   Arrow Keys or A / D\n" +
-        "Jump:   Space, W, or Up Arrow\n" +
-        "Shoot:  X  (need the Blaster power-up first)\n" +
-        "Dash:   Shift  (need the Dash power-up first)\n" +
-        "Pause:  P or Escape\n" +
-        "Restart: R\n\n" +
-        "Stomp enemies by jumping on them!\n" +
-        "Hit question blocks from below for coins.\n" +
-        "Collect all 5 power-ups to unlock special moves.\n" +
-        "Reach the FLAG to finish the level!\n\n" +
-        "Enemy types:\n" +
-        "  👾 Walker — patrols platforms\n" +
-        "  🐸 Jumper — jumps toward you!\n" +
-        "  🦋 Flyer  — floats in the air"
-      );
+      _buildHowToPanel();
+      _showHowToPanel();
     });
 
-    // ── Settings back ──────────────────────────────────────
     const settingsBackBtn = document.getElementById('btn-settings-back');
     if (settingsBackBtn) settingsBackBtn.addEventListener('click', () => {
       beep('menu'); _showMenuPanel();
@@ -3023,7 +2869,9 @@
       // Collect all JS and CSS source files as text
       const filesToFetch = [
         'js/settings.js', 'js/sounds.js', 'js/gamepad.js', 'js/artmanager.js',
-        'js/assets.js', 'js/levels.js', 'js/editor.js', 'js/game.js', 'style.css'
+        'js/assets.js', 'js/levels.js', 'js/editor.js',
+        'js/puzzle.js', 'js/dungeon.js', 'js/kart.js',
+        'js/game.js', 'style.css'
       ];
       const fetched = {};
       for (const f of filesToFetch) {
@@ -3041,10 +2889,10 @@
       }
 
       const authorName = KQ_SETTINGS.get('authorName') || '';
-      const bakedSettings = KQ_SETTINGS.getAll();
+      const gameMode = KQ_SETTINGS.get('gameMode') || 'platformer';
 
       // Build a self-contained index.html with all JS inlined
-      const html = _buildExportHTML(fetched, artOverrides, authorName, bakedSettings);
+      const html = _buildExportHTML(fetched, artOverrides, authorName, gameMode);
       const blob = new Blob([html], { type: 'text/html' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -3055,12 +2903,12 @@
 
       const artCount = Object.keys(artOverrides).length;
       alert(
-        '✅ Game exported!\n\n' +
+        'Game exported!\n\n' +
         (artCount > 0
           ? `🎨 Your pictures are included! Your friend will see YOUR drawings, not colored boxes.\n(${artCount} custom picture${artCount !== 1 ? 's' : ''} baked in)\n\n`
           : '') +
         (authorName ? `Made by: ${authorName}\n\n` : '') +
-        'Just send the .html file — your friend opens it in any browser!\n' +
+        'Just send the .html file - your friend opens it in any browser!\n' +
         'No extra files needed.'
       );
     } catch (err) {
@@ -3068,13 +2916,13 @@
     }
   }
 
-  function _buildExportHTML(files, artOverrides, authorName, bakedSettings) {
+  function _buildExportHTML(files, artOverrides, authorName, gameMode) {
     artOverrides = artOverrides || {};
     authorName = authorName || '';
-    bakedSettings = bakedSettings || {};
+    gameMode = gameMode || 'platformer';
     const title = authorName ? `My Game by ${authorName}` : 'My Game';
     const madeByHTML = authorName
-      ? `<p style="text-align:center;color:#94a3b8;font-size:13px;margin:6px 0 0">Made by <strong style="color:#fbbf24">${authorName}</strong> 🎮</p>`
+      ? `<p style="text-align:center;color:#94a3b8;font-size:13px;margin:6px 0 0">Made by <strong style="color:#fbbf24">${authorName}</strong></p>`
       : '';
 
     return `<!doctype html>
@@ -3089,7 +2937,7 @@
   <main id="gameShell">
     <canvas id="game" width="960" height="540" aria-label="Platformer Game"></canvas>
     <div id="gpToast" style="position:fixed;top:16px;right:16px;background:#1e293b;color:#fbbf24;padding:10px 18px;border-radius:10px;font:bold 15px system-ui;opacity:0;transition:opacity .4s;pointer-events:none;z-index:9999"></div>
-    <section id="menuPanel" style="display:flex">
+    <section id="menuPanel" class="overlay-panel" style="display:flex">
       <div class="big-menu">
         <div class="game-title-area">
           <img src="assets/art/title-logo.png" alt="Game Title" class="title-logo-img"
@@ -3099,14 +2947,14 @@
         ${madeByHTML}
         <div class="big-button-row">
           <button class="kid-btn kid-btn-play" id="btn-play">
-            <span class="kid-btn-icon">▶️</span>
+            <span class="kid-btn-icon">PLAY</span>
             <span class="kid-btn-label">PLAY!</span>
             <span class="kid-btn-sub">Start the game</span>
           </button>
         </div>
         <div class="advanced-row">
-          <button class="small-btn" id="btn-howtoplay">❓ How to Play</button>
-          <button class="small-btn" id="btn-settings">⚙️ Settings</button>
+          <button class="small-btn" id="btn-howtoplay">How to Play</button>
+          <button class="small-btn" id="btn-settings">Settings</button>
         </div>
         <!-- Hidden stubs so game.js event wiring doesn't crash -->
         <button id="btn-editor"  style="display:none"></button>
@@ -3114,29 +2962,39 @@
         <button id="btn-export"  style="display:none"></button>
       </div>
     </section>
-    <section id="artPanel" style="display:none"><div id="art-slots-container"></div></section>
-    <section id="settingsPanel" style="display:none">
+    <section id="artPanel" class="overlay-panel" style="display:none"><div id="art-slots-container"></div></section>
+    <section id="settingsPanel" class="overlay-panel" style="display:none">
       <div class="menu-card settings-card">
         <div class="panel-header">
-          <button class="back-btn" id="btn-settings-back">← Back</button>
-          <h2 class="panel-title">⚙️ Game Settings</h2>
+          <button class="back-btn" id="btn-settings-back">Back</button>
+          <h2 class="panel-title">Game Settings</h2>
         </div>
         <div id="settings-sliders"></div>
-        <button class="small-btn" id="btn-settings-reset" style="margin-top:12px">🔄 Reset Defaults</button>
+        <button class="small-btn" id="btn-settings-reset" style="margin-top:12px">Reset Defaults</button>
       </div>
     </section>
-    <section id="editorPanel" style="display:none">
+    <section id="howToPanel" class="overlay-panel" style="display:none">
+      <div class="menu-card howto-card">
+        <div class="panel-header">
+          <button class="back-btn" id="btn-howto-back">Back</button>
+          <h2 class="panel-title" id="howto-title">How To Play</h2>
+          <p class="panel-hint" id="howto-hint">Quick controls for this game type.</p>
+        </div>
+        <div class="howto-body" id="howto-body"></div>
+      </div>
+    </section>
+    <section id="editorPanel" class="overlay-panel" style="display:none">
       <div id="editorSidePanel"></div>
     </section>
     <nav id="touchControls" aria-label="Touch controls">
       <div class="touch-left">
-        <button data-touch="left" aria-label="Move left">◀</button>
-        <button data-touch="right" aria-label="Move right">▶</button>
+        <button data-touch="left" aria-label="Move left">Left</button>
+        <button data-touch="right" aria-label="Move right">Right</button>
       </div>
       <div class="touch-right">
         <button data-touch="jump"  aria-label="Jump"  class="touch-a">A</button>
         <button data-touch="shoot" aria-label="Shoot" class="touch-b">B</button>
-        <button data-touch="dash"  aria-label="Dash"  class="touch-dash">💨</button>
+        <button data-touch="dash"  aria-label="Dash"  class="touch-dash">Dash</button>
       </div>
     </nav>
   </main>
@@ -3146,9 +3004,10 @@ const _bakedArt = ${JSON.stringify(artOverrides)};
 for (const [k, v] of Object.entries(_bakedArt)) {
   try { localStorage.setItem('kq_art_v1_' + k, v); } catch(e) {}
 }
-// Baked-in settings (genre, physics, tints) — must run before settings.js loads
-try { localStorage.setItem('kq_settings', ${JSON.stringify(JSON.stringify(bakedSettings))}); } catch(e) {}
-</script>
+window.KQ_EXPORT_CONFIG = {
+  gameMode: ${JSON.stringify(gameMode)}
+};
+  </script>
   <script>${files['js/settings.js']}</script>
   <script>${files['js/sounds.js']}</script>
   <script>${files['js/gamepad.js']}</script>
@@ -3156,6 +3015,9 @@ try { localStorage.setItem('kq_settings', ${JSON.stringify(JSON.stringify(bakedS
   <script>${files['js/assets.js']}</script>
   <script>${files['js/levels.js']}</script>
   <script>${files['js/editor.js']}</script>
+  <script>${files['js/puzzle.js']}</script>
+  <script>${files['js/dungeon.js']}</script>
+  <script>${files['js/kart.js']}</script>
   <script>${files['js/game.js']}</script>
 </body>
 </html>`;
@@ -3164,36 +3026,31 @@ try { localStorage.setItem('kq_settings', ${JSON.stringify(JSON.stringify(bakedS
   // ── Boot ───────────────────────────────────────────────────
   function boot() {
     loadImages();
+    _installFrameworkBridge();
 
     // Init level editor with canvas + side panel
     const edPanel = document.getElementById('editorSidePanel');
     if (edPanel) KQ_EDITOR.init(canvas, edPanel);
 
+    if (window.KQ_EXPORT_CONFIG && window.KQ_EXPORT_CONFIG.gameMode) {
+      KQ_SETTINGS.set('gameMode', window.KQ_EXPORT_CONFIG.gameMode);
+    }
+
     _initMenuEvents();
-    _showMenuPanel();
+    if (window.KQ_EXPORT_CONFIG) {
+      mode = 'title';
+      _hideAllPanels();
+    } else {
+      _showMenuPanel();
+    }
 
     // Set up a blank level so the canvas has something to draw on startup
     levelIndex = 0;
     resetLevel(true);
-
-    // Expose internals for external genre modules (kart, zelda, rpg)
-    window._KQ_PRESSED     = pressed;
-    window._KQ_BEEP        = beep;
-    window._KQ_CTX         = ctx;
-    window._KQ_VIEW        = { W: VIEW_W, H: VIEW_H };
-    window._KQ_TILE        = TILE;
-    window._KQ_SETMODE     = (m) => { mode = m; };
-    window._KQ_GAME        = game;
-    window._KQ_DRAWIMG     = drawImg;
-    window._KQ_DRAWWITHTINT = drawWithTint;
-    window._KQ_FX_UPDATE   = updateEffects;
-    window._KQ_FX_DRAW     = drawEffects;
-    window._KQ_HINT        = { show: showHint, draw: drawHintPopup };
-    window._KQ_OVERLAY     = drawOverlay;
-    window._KQ_PAUSEMENU   = drawPauseMenu;
 
     requestAnimationFrame(loop);
   }
 
   boot();
 })();
+

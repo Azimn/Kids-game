@@ -23,17 +23,27 @@ const KQ_ART = (() => {
       key: 'player_idle',
       label: 'Your Hero',
       sublabel: 'Standing still',
-      emoji: '🦸',
+      emoji: 'Hero',
       color: '#3b82f6',
       paths: ['assets/art/player-idle.png'],
     },
     {
-      key: 'player_run',
-      label: 'Hero Walking',
-      sublabel: 'Moving frames',
-      emoji: '🏃',
+      key: 'player_run_1',
+      label: 'Hero Walk 1',
+      sublabel: 'First walking picture',
+      emoji: '1',
       color: '#2563eb',
-      paths: ['assets/art/player-run-1.png', 'assets/art/player-run-2.png'],
+      paths: ['assets/art/player-run-1.png'],
+      fallbackKey: 'player_run',
+    },
+    {
+      key: 'player_run_2',
+      label: 'Hero Walk 2',
+      sublabel: 'Second walking picture',
+      emoji: 'Jump',
+      color: '#1d4ed8',
+      paths: ['assets/art/player-run-2.png'],
+      fallbackKey: 'player_run',
     },
     {
       key: 'player_jump',
@@ -47,7 +57,7 @@ const KQ_ART = (() => {
       key: 'player_hurt',
       label: 'Hero Hurt',
       sublabel: 'Ouch! Got hit',
-      emoji: '😵',
+      emoji: 'Hurt',
       color: '#dc2626',
       paths: ['assets/art/player-hurt.png'],
     },
@@ -57,9 +67,36 @@ const KQ_ART = (() => {
       key: 'enemy_walker',
       label: 'Bad Guy',
       sublabel: 'Walks back and forth',
-      emoji: '👾',
+      emoji: 'Bad',
       color: '#ea580c',
       paths: ['assets/art/enemy-walker.png'],
+    },
+    {
+      key: 'enemy_jumper',
+      label: 'Jumping Bad Guy',
+      sublabel: 'Hops in platformers and shooter waves',
+      emoji: 'Hop',
+      color: '#f97316',
+      paths: ['assets/art/enemy-jumper.png'],
+      fallbackKey: 'enemy_walker',
+    },
+    {
+      key: 'enemy_flyer',
+      label: 'Flying Bad Guy',
+      sublabel: 'Flies in platformers and shooter waves',
+      emoji: 'Fly',
+      color: '#a855f7',
+      paths: ['assets/art/enemy-flyer.png'],
+      fallbackKey: 'enemy_walker',
+    },
+    {
+      key: 'enemy_boss',
+      label: 'Boss Bad Guy',
+      sublabel: 'Big boss enemy',
+      emoji: 'Boss',
+      color: '#dc2626',
+      paths: ['assets/art/enemy-boss.png'],
+      fallbackKey: 'enemy_walker',
     },
 
     // ── Collectibles ─────────────────────────────────────────
@@ -121,6 +158,26 @@ const KQ_ART = (() => {
       color: '#0284c7',
       paths: ['assets/art/projectile.png'],
     },
+
+    { key: 'puzzle_hero', label: 'Puzzle Hero', sublabel: 'Hero in Puzzle Room', emoji: 'Hero', color: '#4488ff', paths: ['assets/art/puzzle-hero.png'] },
+    { key: 'puzzle_slime', label: 'Puzzle Slime', sublabel: 'Small puzzle enemy', emoji: 'Slime', color: '#44cc44', paths: ['assets/art/puzzle-slime.png'] },
+    { key: 'puzzle_boss', label: 'Puzzle Boss', sublabel: 'Puzzle Room boss', emoji: 'Boss', color: '#cc44cc', paths: ['assets/art/puzzle-boss.png'] },
+    { key: 'puzzle_chest', label: 'Puzzle Chest', sublabel: 'Chest with key', emoji: 'Chest', color: '#d4a020', paths: ['assets/art/puzzle-chest.png'] },
+    { key: 'puzzle_key', label: 'Puzzle Key', sublabel: 'Key icon', emoji: 'Key', color: '#ffd700', paths: ['assets/art/puzzle-key.png'] },
+    { key: 'puzzle_door', label: 'Puzzle Door', sublabel: 'Locked/open door', emoji: 'Door', color: '#8b4513', paths: ['assets/art/puzzle-door.png'] },
+    { key: 'puzzle_block', label: 'Puzzle Block', sublabel: 'Push block', emoji: 'Block', color: '#8b6914', paths: ['assets/art/puzzle-block.png'] },
+    { key: 'dungeon_warrior', label: 'Warrior', sublabel: 'Dungeon class', emoji: 'War', color: '#c0392b', paths: ['assets/art/dungeon-warrior.png'] },
+    { key: 'dungeon_wizard', label: 'Wizard', sublabel: 'Dungeon class', emoji: 'Wiz', color: '#8e44ad', paths: ['assets/art/dungeon-wizard.png'] },
+    { key: 'dungeon_rogue', label: 'Rogue', sublabel: 'Dungeon class', emoji: 'Rog', color: '#27ae60', paths: ['assets/art/dungeon-rogue.png'] },
+    { key: 'dungeon_goblin', label: 'Goblin', sublabel: 'First dungeon enemy', emoji: 'Gob', color: '#2ecc71', paths: ['assets/art/dungeon-goblin.png'] },
+    { key: 'dungeon_orc', label: 'Orc', sublabel: 'Second dungeon enemy', emoji: 'Orc', color: '#e67e22', paths: ['assets/art/dungeon-orc.png'] },
+    { key: 'dungeon_boss', label: 'Dungeon Boss', sublabel: 'Final dungeon enemy', emoji: 'Boss', color: '#7f8c8d', paths: ['assets/art/dungeon-boss.png'] },
+    { key: 'dungeon_stairs', label: 'Exit Stairs', sublabel: 'Dungeon exit', emoji: 'Exit', color: '#f39c12', paths: ['assets/art/dungeon-stairs.png'] },
+    { key: 'kart_player', label: 'Player Kart', sublabel: 'Your kart', emoji: 'Kart', color: '#3b82f6', paths: ['assets/art/kart-player.png'] },
+    { key: 'kart_rival', label: 'Rival Kart', sublabel: 'Computer racers', emoji: 'Rival', color: '#ef4444', paths: ['assets/art/kart-rival.png'] },
+    { key: 'kart_item_box', label: 'Item Box', sublabel: 'Pick this up', emoji: '?', color: '#fbbf24', paths: ['assets/art/kart-item-box.png'] },
+    { key: 'kart_boost', label: 'Boost Icon', sublabel: 'Speed item', emoji: 'Fast', color: '#f97316', paths: ['assets/art/kart-boost.png'] },
+    { key: 'kart_shield', label: 'Shield Icon', sublabel: 'Shield item', emoji: 'Shield', color: '#38bdf8', paths: ['assets/art/kart-shield.png'] },
 
     // ── Tiles ────────────────────────────────────────────────
     {
@@ -198,7 +255,7 @@ const KQ_ART = (() => {
   // ── Load saved images from localStorage ───────────────────
   function init() {
     for (const slot of SLOTS) {
-      const raw = _load(slot.key);
+      const raw = _load(slot.key) || (slot.fallbackKey ? _load(slot.fallbackKey) : null);
       if (raw) _applyDataURL(slot, raw);
     }
   }
@@ -286,20 +343,76 @@ const KQ_ART = (() => {
   function buildUI(container) {
     container.innerHTML = '';
 
-    // Group slots by category
-    const groups = [
-      { label: '🦸 Your Hero', keys: ['player_idle','player_run','player_jump','player_hurt'] },
-      { label: '👾 Enemies',   keys: ['enemy_walker'] },
-      { label: '⭐ Coins & Power-ups', keys: ['coin','power_blaster','power_shield','power_jump','power_dash','power_giant','projectile'] },
-      { label: '🧱 Blocks',    keys: ['tile_ground','tile_question','tile_brick','tile_break','tile_spike','tile_goal'] },
-      { label: '🌄 Background & Title', keys: ['background','title_logo'] },
+    const platformerGroups = [
+      { label: 'Your Hero', keys: ['player_idle','player_run_1','player_run_2','player_jump','player_hurt'] },
+      { label: 'Platformer World', keys: ['tile_ground','tile_question','tile_brick','tile_break','tile_spike','tile_goal'] },
+      { label: 'Platformer Bad Guys', keys: ['enemy_walker','enemy_jumper','enemy_flyer'] },
+      { label: 'Coins & Power-ups', keys: ['coin','power_blaster','power_shield','power_jump','power_dash','power_giant'] },
     ];
 
-    for (const group of groups) {
-      const groupEl = document.createElement('div');
-      groupEl.className = 'art-group';
-      groupEl.innerHTML = `<div class="art-group-label">${group.label}</div>`;
+    const moreGroups = [
+      {
+        label: 'Shared by All Games',
+        keys: ['background','title_logo','projectile','enemy_boss'],
+        note: 'These can show up in more than one game type.'
+      },
+      {
+        label: 'Only for Space Shooter',
+        keys: [],
+        note: 'No extra shooter-only pictures yet. Shooter reuses hero, bad guys, boss, background, and blaster shot. Later: ship, alien bullets, stars, and space hazards.'
+      },
+      {
+        label: 'Only for Beat-em-up Adventure',
+        keys: [],
+        note: 'No extra beat-em-up-only pictures yet. Beat-em-up reuses hero, bad guys, boss, and background. Later: street props, breakable crates, and punch effects.'
+      },
+      {
+        label: 'Only for Dungeon Adventure',
+        keys: ['dungeon_warrior','dungeon_wizard','dungeon_rogue','dungeon_goblin','dungeon_orc','dungeon_boss','dungeon_stairs'],
+        note: 'These pictures are only used in Dungeon Adventure.'
+      },
+      {
+        label: 'Only for Kart Racer',
+        keys: ['kart_player','kart_rival','kart_item_box','kart_boost','kart_shield'],
+        note: 'These pictures are only used in Kart Racer.'
+      },
+      {
+        label: 'Only for Puzzle Room',
+        keys: ['puzzle_hero','puzzle_slime','puzzle_boss','puzzle_chest','puzzle_key','puzzle_door','puzzle_block'],
+        note: 'These pictures are only used in Puzzle Room.'
+      },
+    ];
 
+    const starter = document.createElement('section');
+    starter.className = 'art-section art-section-primary';
+    starter.innerHTML = '<div class="art-section-title">Platformer Starter Art</div>';
+    for (const group of platformerGroups) {
+      starter.appendChild(_makeGroup(group));
+    }
+    container.appendChild(starter);
+
+    const more = document.createElement('details');
+    more.className = 'art-more';
+    more.innerHTML = '<summary>More Assets for All Games</summary>';
+    for (const group of moreGroups) {
+      more.appendChild(_makeGroup(group));
+    }
+    container.appendChild(more);
+  }
+
+  function _makeGroup(group) {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'art-group';
+    groupEl.innerHTML = `<div class="art-group-label">${group.label}</div>`;
+
+    if (group.note) {
+      const note = document.createElement('div');
+      note.className = 'art-group-note';
+      note.textContent = group.note;
+      groupEl.appendChild(note);
+    }
+
+    if (group.keys.length) {
       const grid = document.createElement('div');
       grid.className = 'art-grid';
 
@@ -310,8 +423,9 @@ const KQ_ART = (() => {
       }
 
       groupEl.appendChild(grid);
-      container.appendChild(groupEl);
     }
+
+    return groupEl;
   }
 
   function _makeCard(slot) {
@@ -319,24 +433,25 @@ const KQ_ART = (() => {
     card.className = 'art-card';
     card.dataset.slotKey = slot.key;
 
-    const hasOverride = !!_load(slot.key);
+    const savedData = _load(slot.key) || (slot.fallbackKey ? _load(slot.fallbackKey) : null);
+    const hasOverride = !!savedData;
 
     card.innerHTML = `
       <div class="art-preview" id="art-prev-${slot.key}"
            style="background:${slot.color}22;border-color:${slot.color}55">
         ${hasOverride
-          ? `<img src="${_load(slot.key)}" alt="${slot.label}" class="art-thumb"/>`
+          ? `<img src="${savedData}" alt="${slot.label}" class="art-thumb"/>`
           : `<span class="art-emoji">${slot.emoji}</span>`}
-        ${hasOverride ? `<div class="art-badge">✅</div>` : ''}
+        ${hasOverride ? `<div class="art-badge">OK</div>` : ''}
       </div>
       <div class="art-card-label">${slot.label}</div>
       <div class="art-card-sub">${slot.sublabel}</div>
       <button class="art-pick-btn" data-key="${slot.key}"
               style="background:${slot.color}">
-        📁 Pick a Picture
+        Pick a Picture
       </button>
       ${hasOverride
-        ? `<button class="art-clear-btn" data-key="${slot.key}">↩ Use Default</button>`
+        ? `<button class="art-clear-btn" data-key="${slot.key}">Use Default</button>`
         : ''}
     `;
 
@@ -358,19 +473,19 @@ const KQ_ART = (() => {
       const file = fileInput.files[0];
       if (!file) return;
       const btn = card.querySelector('.art-pick-btn');
-      btn.textContent = '⏳ Loading…';
+      btn.textContent = 'Loading...';
       btn.disabled = true;
 
       uploadForSlot(slot.key, file,
         (dataURL) => {
           _refreshCard(card, slot, dataURL);
-          btn.textContent = '📁 Pick a Picture';
+          btn.textContent = 'Pick a Picture';
           btn.disabled = false;
           fileInput.value = '';
         },
         (err) => {
           alert('Oops! ' + err);
-          btn.textContent = '📁 Pick a Picture';
+          btn.textContent = 'Pick a Picture';
           btn.disabled = false;
           fileInput.value = '';
         }
@@ -401,7 +516,7 @@ const KQ_ART = (() => {
         clearBtn = document.createElement('button');
         clearBtn.className = 'art-clear-btn';
         clearBtn.dataset.key = slot.key;
-        clearBtn.textContent = '↩ Use Default';
+        clearBtn.textContent = 'Use Default';
         card.appendChild(clearBtn);
         clearBtn.addEventListener('click', () => {
           if (confirm(`Go back to the default picture for "${slot.label}"?`)) {

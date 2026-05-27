@@ -213,7 +213,8 @@ const KQ_EDITOR = (() => {
       const ch = tool === 'erase' ? '.' : tileTool;
       _setTile(col, row, ch);
     } else if (tool === 'fill') {
-      _floodFill(col, row, tool === 'erase' ? '.' : tileTool);
+      _floodFill(col, row, tileTool);
+      _finishFillTool();
     } else if (tool === 'coin') {
       const px = col * TILE_SIZE + 11, py = row * TILE_SIZE + 11;
       if (!level.coins.find(c => Math.abs(c.x - px) < 10 && Math.abs(c.y - py) < 10))
@@ -260,6 +261,13 @@ const KQ_EDITOR = (() => {
         if (!visited.has(k)) { visited.add(k); queue.push([nc, nr]); }
       }
     }
+  }
+
+  function _finishFillTool() {
+    tool = tileTool === '.' ? 'erase' : 'tile';
+    isPainting = false;
+    _highlightActive();
+    _showMsg('Fill done');
   }
 
   function _setTile(col, row, ch) {
@@ -425,9 +433,36 @@ const KQ_EDITOR = (() => {
   function scrollLeft()  { camX = Math.max(0, camX - TILE_SIZE * 3); }
   function scrollRight() { camX = Math.min(level.width * TILE_SIZE - canvas.width, camX + TILE_SIZE * 3); }
 
+  function _levelHasFinish() {
+    return !!level && level.map.some(row => row.includes('F'));
+  }
+
+  function _saveLevel() {
+    if (!level) return;
+    saveCustomLevel(level);
+    _showMsg(_levelHasFinish() ? 'Level saved!' : 'Saved! Add a finish flag so players can win.');
+  }
+
+  function _playtestLevel() {
+    if (!level) return;
+    if (!_levelHasFinish()) {
+      _showMsg('Add a finish flag before testing.');
+      return;
+    }
+    saveCustomLevel(level);
+    window.KQ_EDITOR_PLAYTEST = level;
+    document.dispatchEvent(new CustomEvent('kq:playtestLevel', { detail: level }));
+  }
+
   // ── HTML side panel ────────────────────────────────────────
   function _buildPanel() {
     panel.innerHTML = `
+      <div class="ed-actionbar">
+        <button class="ed-btn ed-btn-menu" id="ed-back-actions">Menu</button>
+        <button class="ed-btn ed-btn-play" id="ed-playtest-top">Test</button>
+        <button class="ed-btn ed-btn-save" id="ed-save-top">Save</button>
+      </div>
+
       <div class="ed-topbar">
         <button class="ed-btn ed-btn-menu" id="ed-back-top">← Menu</button>
       </div>
@@ -447,10 +482,10 @@ const KQ_EDITOR = (() => {
               <span style="font-size:9px;color:#fff;margin-top:2px;font-weight:bold">${lbl}</span>
             </button>`
           ).join('')}
-          <button class="ed-swatch ed-fill-btn" id="ed-fill" title="Paint Bucket / Flood Fill"
+          <button class="ed-swatch ed-fill-btn" id="ed-fill" title="Fill one connected area"
             style="background:#0ea5e9;width:54px;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;border:2px solid rgba(255,255,255,0.2)">
             <span style="font-size:22px">🪣</span>
-            <span style="font-size:9px;color:#fff;margin-top:2px;font-weight:bold">Fill</span>
+            <span style="font-size:9px;color:#fff;margin-top:2px;font-weight:bold">Fill 1x</span>
           </button>
         </div>
       </div>
@@ -464,6 +499,9 @@ const KQ_EDITOR = (() => {
           <button class="ed-swatch" data-tool="eraseEntity" style="background:#64748b">🗑</button>
         </div>
       </div>
+
+      <details class="ed-advanced">
+        <summary>More Tools</summary>
 
       <div class="ed-section" id="ed-enemy-picker" style="display:none">
         <label class="ed-label">Enemy Type</label>
@@ -508,6 +546,8 @@ const KQ_EDITOR = (() => {
         </div>
       </div>
 
+      </details>
+
       <hr class="ed-hr"/>
 
       <div class="ed-section">
@@ -530,11 +570,6 @@ const KQ_EDITOR = (() => {
     // Tile swatches
     panel.querySelectorAll('.ed-tile').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (tool === 'fill') {
-          tileTool = btn.dataset.ch;
-          _highlightActive();
-          return;
-        }
         tool     = btn.dataset.ch === '.' ? 'erase' : 'tile';
         tileTool = btn.dataset.ch;
         _highlightActive();
@@ -543,7 +578,7 @@ const KQ_EDITOR = (() => {
 
     // Fill / bucket button
     panel.querySelector('#ed-fill').addEventListener('click', () => {
-      tool = 'fill';
+      tool = tool === 'fill' ? (tileTool === '.' ? 'erase' : 'tile') : 'fill';
       _highlightActive();
     });
 
@@ -600,7 +635,12 @@ const KQ_EDITOR = (() => {
       document.dispatchEvent(new CustomEvent('kq:playtestLevel', { detail: level }));
     });
 
-    panel.querySelectorAll('#ed-back, #ed-back-top').forEach(btn => btn.addEventListener('click', () => {
+    const saveTopBtn = panel.querySelector('#ed-save-top');
+    if (saveTopBtn) saveTopBtn.addEventListener('click', _saveLevel);
+    const playtestTopBtn = panel.querySelector('#ed-playtest-top');
+    if (playtestTopBtn) playtestTopBtn.addEventListener('click', _playtestLevel);
+
+    panel.querySelectorAll('#ed-back, #ed-back-top, #ed-back-actions').forEach(btn => btn.addEventListener('click', () => {
       document.dispatchEvent(new CustomEvent('kq:editorBack'));
     }));
 

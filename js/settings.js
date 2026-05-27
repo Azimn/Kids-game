@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS = {
   projectileSpeed:  1.0,
 
   // Player options
-  startLives:       3,
+  startLives:       5,
   infiniteLives:    false,
   invincibleMode:   false,   // never take damage (god mode)
   alwaysBlaster:    false,   // start with blaster unlocked
@@ -25,7 +25,7 @@ const DEFAULT_SETTINGS = {
   sfxVolume:        0.7,
 
   // Game genre/mode
-  gameMode:         'platformer',  // platformer | shooter | brawler
+  gameMode:         'platformer',  // platformer | shooter | brawler | dungeon | racer | puzzle
 
   // Author / publisher
   authorName:       '',
@@ -45,6 +45,12 @@ const KQ_SETTINGS = (() => {
     try {
       const saved = localStorage.getItem('kq_settings');
       if (saved) data = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+      const migratedLives = localStorage.getItem('kq_lives_default_v2');
+      if (!migratedLives && data.startLives === 3) {
+        data.startLives = DEFAULT_SETTINGS.startLives;
+        localStorage.setItem('kq_lives_default_v2', '1');
+        save();
+      }
     } catch (e) { /* ignore parse errors */ }
   }
 

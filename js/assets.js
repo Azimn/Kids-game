@@ -55,9 +55,40 @@ window.KQ_ASSETS = {
 
   // ── Enemies ──────────────────────────────────────────────────
   enemies: {
-    walker: "assets/art/enemy-walker.png"
+    walker: "assets/art/enemy-walker.png",
+    jumper: "assets/art/enemy-jumper.png",
+    flyer: "assets/art/enemy-flyer.png",
+    boss: "assets/art/enemy-boss.png"
   },
 
   // ── Projectile ───────────────────────────────────────────────
-  projectile: "assets/art/projectile.png"
+  projectile: "assets/art/projectile.png",
+
+  puzzle: {
+    hero: "assets/art/puzzle-hero.png",
+    slime: "assets/art/puzzle-slime.png",
+    boss: "assets/art/puzzle-boss.png",
+    chest: "assets/art/puzzle-chest.png",
+    key: "assets/art/puzzle-key.png",
+    door: "assets/art/puzzle-door.png",
+    block: "assets/art/puzzle-block.png"
+  },
+
+  dungeon: {
+    warrior: "assets/art/dungeon-warrior.png",
+    wizard: "assets/art/dungeon-wizard.png",
+    rogue: "assets/art/dungeon-rogue.png",
+    goblin: "assets/art/dungeon-goblin.png",
+    orc: "assets/art/dungeon-orc.png",
+    boss: "assets/art/dungeon-boss.png",
+    stairs: "assets/art/dungeon-stairs.png"
+  },
+
+  kart: {
+    player: "assets/art/kart-player.png",
+    rival: "assets/art/kart-rival.png",
+    itemBox: "assets/art/kart-item-box.png",
+    boost: "assets/art/kart-boost.png",
+    shield: "assets/art/kart-shield.png"
+  }
 };

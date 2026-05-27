@@ -38,10 +38,13 @@ Drop these files into `assets/art/`:
 | `player-jump.png` | Jumping |
 | `player-hurt.png` | Ouch! Just got hit |
 
-### Enemy
+### Enemies
 | Filename | What it shows |
 |---|---|
 | `enemy-walker.png` | The bad guy that walks back and forth |
+| `enemy-jumper.png` | The hopping bad guy |
+| `enemy-flyer.png` | The flying bad guy |
+| `enemy-boss.png` | The big boss bad guy |
 
 ### Tiles (the blocks that make the ground and platforms)
 | Filename | What it shows |

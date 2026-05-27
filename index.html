@@ -8,135 +8,123 @@
 </head>
 <body>
   <main id="gameShell">
-
-    <!-- Game canvas -->
     <canvas id="game" width="960" height="540" aria-label="Platformer Game"></canvas>
-
-    <!-- Gamepad toast -->
     <div id="gpToast"></div>
 
-    <!-- ══════════════════════════════════════════════════════
-         MAIN MENU  —  big, friendly, kid-first
-    ══════════════════════════════════════════════════════ -->
     <section id="menuPanel" class="overlay-panel" style="display:none">
       <div class="big-menu">
-
         <div class="game-title-area">
           <img src="assets/art/title-logo.png" alt="Game Title" class="title-logo-img"
                onerror="this.style.display='none'; document.getElementById('title-text').style.display='block'"/>
           <div id="title-text" class="title-text-fallback" style="display:none">Placeholder Game</div>
         </div>
 
-        <!-- The three main things a kid would want to do -->
         <div class="big-button-row">
-
           <button class="kid-btn kid-btn-play" id="btn-play">
-            <span class="kid-btn-icon">▶️</span>
+            <span class="kid-btn-icon">PLAY</span>
             <span class="kid-btn-label">PLAY!</span>
             <span class="kid-btn-sub">Start the game</span>
           </button>
 
           <button class="kid-btn kid-btn-art" id="btn-art">
-            <span class="kid-btn-icon">🎨</span>
-            <span class="kid-btn-label">MY ART</span>
-            <span class="kid-btn-sub">Put your pictures in!</span>
+            <span class="kid-btn-icon">ART</span>
+            <span class="kid-btn-label">MAKE ART</span>
+            <span class="kid-btn-sub">Use your pictures</span>
           </button>
 
           <button class="kid-btn kid-btn-level" id="btn-editor">
-            <span class="kid-btn-icon">🗺️</span>
-            <span class="kid-btn-label">MY LEVELS</span>
+            <span class="kid-btn-icon">BUILD</span>
+            <span class="kid-btn-label">BUILD LEVELS</span>
             <span class="kid-btn-sub">Build your world</span>
           </button>
-
         </div>
 
-        <!-- Genre picker -->
-        <div class="advanced-row" id="genre-row" style="gap:8px">
-          <span style="color:#64748b;font-size:13px;font-weight:700;align-self:center">Game Type:</span>
-          <button class="small-btn genre-btn" data-genre="platformer">🏃 Platformer</button>
-          <button class="small-btn genre-btn" data-genre="shooter">🚀 Space Shooter</button>
-          <button class="small-btn genre-btn" data-genre="brawler">👊 Beat-em-up</button>
-          <button class="small-btn genre-btn" data-genre="metroid">🗺️ Explore</button>
-          <button class="small-btn genre-btn" data-genre="kart">🏎️ Kart Race</button>
-          <button class="small-btn genre-btn" data-genre="zelda">🗡️ Puzzle Room</button>
-          <button class="small-btn genre-btn" data-genre="rpg">⚔️ Dungeon RPG</button>
-        </div>
+        <div class="advanced-drawer" id="advancedDrawer">
+          <button class="advanced-toggle" id="btn-more-tools" type="button" aria-expanded="false" aria-controls="advancedDrawerContent">
+            <span>More Tools</span>
+            <span class="advanced-chevron" aria-hidden="true">^</span>
+          </button>
 
-        <!-- Advanced stuff — smaller, out of the way -->
-        <div class="advanced-row">
-          <button class="small-btn" id="btn-howtoplay">❓ How to Play</button>
-          <button class="small-btn" id="btn-settings">⚙️ Settings</button>
-          <button class="small-btn" id="btn-export">📦 Share My Game</button>
-        </div>
+          <div class="advanced-drawer-content" id="advancedDrawerContent">
+            <div class="advanced-row" id="genre-row">
+              <span class="advanced-label">Game Type</span>
+              <button class="small-btn genre-btn" data-genre="platformer">Platformer</button>
+              <button class="small-btn genre-btn" data-genre="shooter">Space Shooter</button>
+              <button class="small-btn genre-btn" data-genre="brawler">Beat-em-up</button>
+              <button class="small-btn genre-btn" data-genre="dungeon">Dungeon Adventure</button>
+              <button class="small-btn genre-btn" data-genre="racer">Kart Racer</button>
+              <button class="small-btn genre-btn" data-genre="puzzle">Puzzle Room</button>
+            </div>
+            <div class="genre-info" id="genreInfo" aria-live="polite">
+              <strong id="genreInfoTitle">Platformer</strong>
+              <span id="genreInfoText">Run, jump, collect coins, and build your own levels.</span>
+            </div>
 
+            <div class="advanced-row">
+              <button class="small-btn" id="btn-howtoplay">How to Play</button>
+              <button class="small-btn" id="btn-settings">Settings</button>
+              <button class="small-btn" id="btn-export">Share My Game</button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- ══════════════════════════════════════════════════════
-         ART MANAGER  —  click a slot, pick your drawing
-    ══════════════════════════════════════════════════════ -->
     <section id="artPanel" class="overlay-panel" style="display:none">
       <div class="art-manager-shell">
-
         <div class="panel-header">
-          <button class="back-btn" id="btn-art-back">← Back</button>
-          <h2 class="panel-title">🎨 Put Your Own Pictures In!</h2>
+          <button class="back-btn" id="btn-art-back">Back</button>
+          <h2 class="panel-title">Make Your Art</h2>
           <p class="panel-hint">Click any box below, then pick a picture from your computer.
-            It shows up in the game right away! ✨</p>
+            It shows up in the game right away!</p>
         </div>
-
         <div id="art-slots-container" class="art-slots-container"></div>
-
       </div>
     </section>
 
-    <!-- ══════════════════════════════════════════════════════
-         SETTINGS  —  advanced modifiers, for older kids/parents
-    ══════════════════════════════════════════════════════ -->
     <section id="settingsPanel" class="overlay-panel" style="display:none">
       <div class="menu-card settings-card">
-
         <div class="panel-header">
-          <button class="back-btn" id="btn-settings-back">← Back</button>
-          <h2 class="panel-title">⚙️ Game Settings</h2>
+          <button class="back-btn" id="btn-settings-back">Back</button>
+          <h2 class="panel-title">Game Settings</h2>
           <p class="panel-hint">Move the sliders to change how the game feels.
-            Try making gravity really low for moon jumping! 🌙</p>
+            Try making gravity really low for moon jumping!</p>
         </div>
-
         <div id="settings-sliders"></div>
-
         <button class="small-btn" id="btn-settings-reset" style="margin-top:12px">
-          🔄 Put Everything Back to Normal
+          Put Everything Back to Normal
         </button>
-
       </div>
     </section>
 
-    <!-- ══════════════════════════════════════════════════════
-         LEVEL EDITOR PANEL  —  side panel only, canvas is the editor
-    ══════════════════════════════════════════════════════ -->
+    <section id="howToPanel" class="overlay-panel" style="display:none">
+      <div class="menu-card howto-card">
+        <div class="panel-header">
+          <button class="back-btn" id="btn-howto-back">Back</button>
+          <h2 class="panel-title" id="howto-title">How To Play</h2>
+          <p class="panel-hint" id="howto-hint">Quick controls for this game type.</p>
+        </div>
+        <div class="howto-body" id="howto-body"></div>
+      </div>
+    </section>
+
     <section id="editorPanel" class="overlay-panel" style="display:none">
       <div id="editorSidePanel"></div>
     </section>
 
-    <!-- ══════════════════════════════════════════════════════
-         TOUCH CONTROLS
-    ══════════════════════════════════════════════════════ -->
     <nav id="touchControls" aria-label="Touch controls">
       <div class="touch-left">
-        <button data-touch="left" aria-label="Move left">◀</button>
-        <button data-touch="right" aria-label="Move right">▶</button>
+        <button data-touch="left" aria-label="Move left">Left</button>
+        <button data-touch="right" aria-label="Move right">Right</button>
       </div>
       <div class="touch-right">
         <button data-touch="jump"  aria-label="Jump"  class="touch-a">A</button>
         <button data-touch="shoot" aria-label="Shoot" class="touch-b">B</button>
-        <button data-touch="dash"  aria-label="Dash"  class="touch-dash">💨</button>
+        <button data-touch="dash"  aria-label="Dash"  class="touch-dash">Dash</button>
       </div>
     </nav>
+  </main>
 
-  </main><!-- #gameShell -->
-
-  <!-- Scripts (order matters) -->
   <script src="js/settings.js"></script>
   <script src="js/sounds.js"></script>
   <script src="js/gamepad.js"></script>
@@ -144,10 +132,9 @@
   <script src="js/assets.js"></script>
   <script src="js/levels.js"></script>
   <script src="js/editor.js"></script>
-  <script src="js/game.js"></script>
-  <!-- External genre modules (loaded after game.js exposes _KQ_ globals) -->
+  <script src="js/puzzle.js"></script>
+  <script src="js/dungeon.js"></script>
   <script src="js/kart.js"></script>
-  <script src="js/zelda.js"></script>
-  <script src="js/rpg.js"></script>
+  <script src="js/game.js"></script>
 </body>
 </html>

@@ -1,297 +1,3 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/>
-  <title>⚔️ Dungeon Adventure Framework</title>
-  <style>
-    *{{box-sizing:border-box;margin:0;padding:0}}
-    body{{background:#0f172a;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui,sans-serif}}
-    canvas{{display:block;max-width:100%;border:2px solid #334155;border-radius:8px}}
-    #info{{color:#94a3b8;font-size:13px;margin-top:10px;text-align:center}}
-  </style>
-</head>
-<body>
-<canvas id="game" width="960" height="540"></canvas>
-<div id="info">🎮 Arrow Keys / WASD to move &nbsp;·&nbsp; Space / Z = Action &nbsp;·&nbsp; P = Pause &nbsp;·&nbsp; Click canvas first to capture input</div>
-<script>
-// ── Standalone scaffold: provides all _KQ_ globals the framework modules need ──
-const canvas = document.getElementById('game');
-const ctx    = canvas.getContext('2d');
-const VIEW_W = 960, VIEW_H = 540, TILE = 48;
-
-// Input
-const keys  = Object.create(null);
-const _nameMap = {{
-  ArrowLeft:'left', a:'left', A:'left',
-  ArrowRight:'right', d:'right', D:'right',
-  ArrowUp:'up', w:'up', W:'up',
-  ArrowDown:'down', s:'down', S:'down',
-  ' ':'jump', z:'jump', Z:'jump', Enter:'jump',
-  x:'shoot', X:'shoot', ControlLeft:'shoot', ControlRight:'shoot',
-  c:'dash', C:'dash', ShiftLeft:'dash', ShiftRight:'dash',
-}};
-document.addEventListener('keydown', e=>{{ if(!e.repeat){{keys[_nameMap[e.key]||e.code]=true; e.preventDefault();}} }});
-document.addEventListener('keyup',   e=>{{ keys[_nameMap[e.key]||e.code]=false; }});
-
-// Touch controls (tap left/right halves of canvas to steer, tap upper-right to jump)
-canvas.addEventListener('touchstart', e=>{{
-  e.preventDefault();
-  for(const t of e.changedTouches){{
-    const r=canvas.getBoundingClientRect();
-    const x=(t.clientX-r.left)*(VIEW_W/r.width), y=(t.clientY-r.top)*(VIEW_H/r.height);
-    if(x<VIEW_W*0.33) keys['left']=true;
-    else if(x>VIEW_W*0.66) keys['right']=true;
-    else keys['jump']=true;
-  }}
-}},{{passive:false}});
-canvas.addEventListener('touchend', e=>{{ e.preventDefault(); keys['left']=keys['right']=keys['jump']=false; }}, {{passive:false}});
-
-// Settings (minimal stub)
-window.KQ_SETTINGS = {{ get: k => ({{gravityMult:1,speedMult:1,jumpMult:1,enemySpeedMult:1,startLives:3,infiniteLives:false,invincibleMode:false,tintPlayer:''}}[k]||null) }};
-
-// Assets (no files in standalone — falls back to colored shapes in all drawImg calls)
-window.KQ_ASSETS = {{ player:{{}}, enemies:{{}}, tiles:{{}}, items:{{}}, backgrounds:{{}} }};
-
-// Shared game state
-const _game = {{ particles:[], popups:[], score:0 }};
-
-// Audio
-let _audioCtx = null;
-function _ensureAudio(){{
-  if(!_audioCtx){{ const C=window.AudioContext||window.webkitAudioContext; if(C) _audioCtx=new C(); }}
-  if(_audioCtx&&_audioCtx.state==='suspended') _audioCtx.resume();
-}}
-function _beep(type='coin'){{
-  _ensureAudio(); if(!_audioCtx) return;
-  const map={{coin:[880,.12],jump:[440,.1],shoot:[660,.08],hurt:[220,.2],stomp:[330,.12],win:[880,.5],power:[990,.18],menu:[550,.1]}};
-  const [freq,dur]=map[type]||[440,.1];
-  const o=_audioCtx.createOscillator(), g=_audioCtx.createGain();
-  o.connect(g); g.connect(_audioCtx.destination);
-  o.frequency.value=freq; o.type='square';
-  g.gain.setValueAtTime(0.15, _audioCtx.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime+dur);
-  o.start(); o.stop(_audioCtx.currentTime+dur);
-}}
-canvas.addEventListener('click', _ensureAudio, {{once:true}});
-
-// Hint system
-let _hint=null, _hintDismissed={{}};
-function _showHint(key, lines){{ if(_hintDismissed[key]) return; _hint={{key,lines}}; }}
-function _drawHint(){{
-  if(!_hint) return;
-  const x=80,y=60,w=800,lh=24;
-  const h=_hint.lines.length*lh+60;
-  ctx.save();
-  ctx.fillStyle='rgba(15,23,42,0.93)'; ctx.strokeStyle='#fbbf24'; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.roundRect(x,y,w,h,12); ctx.fill(); ctx.stroke();
-  ctx.fillStyle='#fbbf24'; ctx.font='bold 16px system-ui'; ctx.textAlign='center';
-  ctx.fillText('💡 TIP — click or press any key to close', x+w/2, y+28);
-  ctx.fillStyle='#e2e8f0'; ctx.font='15px system-ui';
-  _hint.lines.forEach((l,i)=>ctx.fillText(l, x+w/2, y+52+i*lh));
-  ctx.restore();
-}}
-document.addEventListener('keydown', ()=>{{ if(_hint){{ _hintDismissed[_hint.key]=true; _hint=null; }} }}, true);
-canvas.addEventListener('click', ()=>{{ if(_hint){{ _hintDismissed[_hint.key]=true; _hint=null; }} }});
-
-// drawImg stub (no files → always returns false so code falls through to colored shape)
-function _drawImg(){ return false; }
-
-// drawWithTint stub
-function _drawWithTint(tint, x, y, w, h, fn){{ fn(); }}
-
-// Particles / popups (simple version)
-function _spawnParticles(x,y,color,count=8){{
-  for(let i=0;i<count;i++) _game.particles.push({{
-    x,y,vx:(Math.random()-0.5)*160,vy:-Math.random()*200-60,life:0.6,maxLife:0.6,color,r:4
-  }});
-}}
-function _updateEffects(dt){{
-  _game.particles=_game.particles.filter(p=>{{
-    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=400*dt; p.life-=dt; return p.life>0;
-  }});
-  _game.popups=_game.popups.filter(p=>{{ p.y-=40*dt; p.life-=dt; return p.life>0; }});
-}}
-function _drawEffects(){{
-  for(const p of _game.particles){{
-    ctx.globalAlpha=Math.max(0,p.life/p.maxLife);
-    ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
-  }}
-  ctx.globalAlpha=1;
-  for(const p of _game.popups){{
-    ctx.globalAlpha=Math.max(0,p.life);
-    ctx.fillStyle='#fbbf24'; ctx.font='bold 16px system-ui'; ctx.textAlign='center';
-    ctx.fillText(p.text||'', p.x, p.y);
-  }}
-  ctx.globalAlpha=1;
-}}
-
-// Mode
-let _mode = 'playing';
-function _setMode(m){{ _mode=m; }}
-
-// Expose all globals the framework modules expect
-window._KQ_PRESSED     = name=>!!keys[name];
-window._KQ_BEEP        = _beep;
-window._KQ_CTX         = ctx;
-window._KQ_VIEW        = {{W:VIEW_W,H:VIEW_H}};
-window._KQ_TILE        = TILE;
-window._KQ_SETMODE     = _setMode;
-window._KQ_GAME        = _game;
-window._KQ_DRAWIMG     = _drawImg;
-window._KQ_DRAWWITHTINT= _drawWithTint;
-window._KQ_FX_UPDATE   = _updateEffects;
-window._KQ_FX_DRAW     = _drawEffects;
-window._KQ_HINT        = {{ show:_showHint, draw:_drawHint }};
-
-// ── Framework module JS (inlined below) ──────────────────────────────────────
-/*
-  sounds.js — ZzFX-powered retro sound effects
-  Based on ZzFXMicro v1.3.2 by Frank Force (MIT License)
-  https://github.com/KilledByAPixel/ZzFX
-
-  Replaces the basic beep() in game.js with rich procedural audio.
-  window.KQ_BEEP(type) is the public API — same interface as before.
-*/
-
-'use strict';
-
-// ── ZzFXMicro (inline, ~1KB) ──────────────────────────────────────────────
-let zzfxV = 0.3;
-let zzfxX = null; // created on first user gesture
-
-function _zzfxCtx() {
-  if (!zzfxX) {
-    const C = window.AudioContext || window.webkitAudioContext;
-    if (C) zzfxX = new C();
-  }
-  if (zzfxX && zzfxX.state === 'suspended') zzfxX.resume();
-  return zzfxX;
-}
-
-function zzfx(
-  volume=1, randomness=.05, frequency=220, attack=0, sustain=0,
-  release=.1, shape=0, shapeCurve=1, slide=0, deltaSlide=0,
-  pitchJump=0, pitchJumpTime=0, repeatTime=0, noise=0, modulation=0,
-  bitCrush=0, delay=0, sustainVolume=1, decay=0, tremolo=0, filter=0
-) {
-  const ctx = _zzfxCtx(); if (!ctx) return;
-  const sampleRate = 44100;
-  const PI2 = Math.PI * 2;
-  const abs = Math.abs, sign = v => v < 0 ? -1 : 1;
-  let startSlide = slide *= 500 * PI2 / sampleRate / sampleRate;
-  let startFrequency = frequency *=
-    (1 + randomness * 2 * Math.random() - randomness) * PI2 / sampleRate;
-  let modOffset=0, repeat=0, crush=0, jump=1;
-  let b=[], t=0, i=0, s=0, f;
-  const source = ctx.createBufferSource();
-  // biquad filter
-  const quality=2, w=PI2*abs(filter)*2/sampleRate,
-    cos=Math.cos(w), alpha=Math.sin(w)/2/quality,
-    a0=1+alpha, a1=-2*cos/a0, a2=(1-alpha)/a0,
-    b0=(1+sign(filter)*cos)/2/a0,
-    b1=-(sign(filter)+cos)/a0, b2=b0;
-  let x2=0, x1=0, y2=0, y1=0;
-  // scale
-  attack  = attack  * sampleRate || 9;
-  decay   *= sampleRate; sustain *= sampleRate;
-  release *= sampleRate; delay   *= sampleRate;
-  deltaSlide     *= 500 * PI2 / sampleRate ** 3;
-  modulation     *= PI2 / sampleRate;
-  pitchJump      *= PI2 / sampleRate;
-  pitchJumpTime  *= sampleRate;
-  repeatTime      = repeatTime * sampleRate | 0;
-  volume         *= zzfxV;
-  const length = attack + decay + sustain + release + delay | 0;
-  for (; i < length; b[i++] = s * volume) {
-    if (!(++crush % (bitCrush * 100 | 0 || 1))) {
-      s = shape ? shape>1 ? shape>2 ? shape>3 ? shape>4 ?
-        (t/PI2%1 < shapeCurve/2)*2-1 :
-        Math.sin(t**3) :
-        Math.max(Math.min(Math.tan(t),1),-1) :
-        1-(2*t/PI2%2+2)%2 :
-        1-4*abs(Math.round(t/PI2)-t/PI2) :
-        Math.sin(t);
-      s = (repeatTime ?
-        1 - tremolo + tremolo * Math.sin(PI2 * i / repeatTime) : 1) *
-        (shape>4 ? s : sign(s) * abs(s) ** shapeCurve) *
-        (i < attack ? i/attack :
-         i < attack+decay ? 1-((i-attack)/decay)*(1-sustainVolume) :
-         i < attack+decay+sustain ? sustainVolume :
-         i < length-delay ? (length-i-delay)/release*sustainVolume : 0);
-      s = delay ? s/2 + (delay > i ? 0 :
-        (i < length-delay ? 1 : (length-i)/delay) *
-        b[i-delay|0]/2/volume) : s;
-      if (filter) s = y1 = b2*x2 + b1*(x2=x1) + b0*(x1=s) - a2*y2 - a1*(y2=y1);
-    }
-    f = (frequency += slide += deltaSlide) * Math.cos(modulation * modOffset++);
-    t += f + f * noise * Math.sin(i**5);
-    if (jump && ++jump > pitchJumpTime) { frequency += pitchJump; startFrequency += pitchJump; jump = 0; }
-    if (repeatTime && !(++repeat % repeatTime)) { frequency = startFrequency; slide = startSlide; jump ||= 1; }
-  }
-  const buf = ctx.createBuffer(1, b.length, sampleRate);
-  buf.getChannelData(0).set(b);
-  source.buffer = buf;
-  source.connect(ctx.destination);
-  source.start();
-  return source;
-}
-
-// ── Sound presets ─────────────────────────────────────────────────────────
-// Each array matches zzfx() parameters in order.
-// Tweak numbers on https://zzfx.3d2k.com/ (the ZzFX sound designer tool)
-const SFX = {
-  // Jump: short upward chirp
-  jump:    [.8, .05, 320, .01, .06, .05, 0, 1.8, 14, , , , , , , , , , , ,],
-  // Coin collect: bright sparkle
-  coin:    [1,  .05, 880, .01, .06, .08, 0, 2,   ,  , 280, .08, , , , , , , , ,],
-  // Shoot / fire: short blaster zap
-  shoot:   [.7, .05, 600, .01, .03, .06, 1, 1.5, -30, , , , , , , , , , , ,],
-  // Hurt / take damage: buzzy thud
-  hurt:    [1,  .1,  180, .01, .05, .1,  3, ,    ,  , , , , , .3, , , , , ,],
-  // Stomp on enemy: satisfying thwack
-  stomp:   [1,  .05, 200, .01, .02, .08, 1, 1.5, ,  , , , , , , , , , , ,],
-  // Win / level clear: ascending fanfare
-  win:     [1,  .02, 350, .01, .4,  .4,  0, 1.2, 6, , 200, .15, , , , , , .8, , ,],
-  // Power-up: sparkly ascending chord
-  power:   [1,  .02, 440, .01, .1,  .25, 0, 1.5, 8, , 120, .1,  , , , , , .9, , ,],
-  // Menu blip: soft click
-  menu:    [.5, .05, 440, .01, .02, .04, 0, 1,   ,  , , , , , , , , , , ,],
-  // Explosion (boss, kart crash): deep rumble
-  explode: [1,  .4,  40,  .01, .15, .4,  2, ,    -10, , , , , .6, , 8, , , , ,],
-  // Blip (dialog advance, UI confirm)
-  blip:    [.5, .02, 660, .005,.01, .05, 0, 1.2, ,  , , , , , , , , , , ,],
-  // Sword swing (zelda)
-  sword:   [.7, .05, 340, .005,.02, .1,  2, 1.5, -20, , , , , , , , , , , ,],
-  // Door unlock
-  unlock:  [.8, .02, 280, .01, .08, .2,  0, 1.2, 4, , 100, .1,  , , , , , .8, , ,],
-  // Battle hit (RPG)
-  hit:     [1,  .1,  220, .01, .04, .12, 1, 1.3, ,  , , , , .2, , , , , , ,],
-  // Level up (RPG)
-  levelup: [1,  .01, 300, .01, .5,  .5,  0, 1.5, 10, , 300,.2, , , , , , 1, , ,],
-  // Engine rev (kart) — short buzzy loop hint
-  engine:  [.3, .1,  80,  .01, .05, .08, 2, ,    2,  , , , , .1, 3, , , , , ,],
-};
-
-// ── Public API ───────────────────────────────────────────────────────────
-// Maps the existing beep(type) call names to ZzFX presets.
-// New names (sword, unlock, hit, levelup, explode, blip, engine) are also available.
-function KQ_BEEP_ZzFX(type = 'menu') {
-  const vol = (window.KQ_SETTINGS && KQ_SETTINGS.get('sfxVolume')) ?? 0.7;
-  zzfxV = vol * 0.35; // ZzFX volume is already pretty loud at 0.3
-  const preset = SFX[type] || SFX.menu;
-  try { zzfx(...preset); } catch(e) { /* silently ignore if AudioContext blocked */ }
-}
-
-// Expose for use by game.js and external genre modules
-window.KQ_SFX     = KQ_BEEP_ZzFX;
-window._KQ_BEEP   = KQ_BEEP_ZzFX; // also patch the external module global
-
-
-// ============================================================
-//  KQ_RPG — Dungeon Adventure RPG Framework
-//  Canvas: 960×540  |  Tile: 48  |  Grid: 20×11
-// ============================================================
 window.KQ_RPG = (() => {
   'use strict';
 
@@ -315,13 +21,14 @@ window.KQ_RPG = (() => {
     enemies: [],            // overworld enemy objects
     npc: null,
     npcTalked: false,
-    exit: { tx: 18, ty: 5 },
+    exit: { tx: 14, ty: 5 },
     battleState: null,      // active battle data
     menuIdx: 0,             // battle menu selection
     phase2Timer: 0,         // generic timer (animation pause, etc.)
     pendingPhase: null,
     clickX: -1, clickY: -1, // mouse click this frame
     _clickHandler: null,
+    _navCooldown: 0,
   };
 
   // ── Class definitions ───────────────────────────────────────
@@ -371,13 +78,23 @@ window.KQ_RPG = (() => {
     [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   ];
-  // 2 = exit tile position (marked in row 5, col 18)
+  // Exit is drawn from rpg.exit so it stays inside the playable map area.
 
   // ── Helpers ─────────────────────────────────────────────────
   function ctx() { return window._KQ_CTX; }
   function pressed(k) { return window._KQ_PRESSED && window._KQ_PRESSED(k); }
   function beep(t) { window._KQ_BEEP && window._KQ_BEEP(t); }
   function setMode(m) { window._KQ_SETMODE && window._KQ_SETMODE(m); }
+  function art(key, x, y, w, h) {
+    const path = window.KQ_ASSETS && window.KQ_ASSETS.dungeon && window.KQ_ASSETS.dungeon[key];
+    return !!(path && window._KQ_DRAW_IMG && window._KQ_DRAW_IMG(path, x, y, w, h));
+  }
+  function classArtKey(idx) {
+    return idx === 1 ? 'wizard' : idx === 2 ? 'rogue' : 'warrior';
+  }
+  function enemyArtKey(idx) {
+    return idx === 2 ? 'boss' : idx === 1 ? 'orc' : 'goblin';
+  }
 
   function rnd(n) { return Math.floor(Math.random() * (n + 1)); }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -442,7 +159,7 @@ window.KQ_RPG = (() => {
     return [
       { idx: 0, tx: 5,  ty: 3, defeated: false },
       { idx: 1, tx: 10, ty: 7, defeated: false },
-      { idx: 2, tx: 16, ty: 3, defeated: false },  // boss
+      { idx: 2, tx: 13, ty: 3, defeated: false },  // boss
     ];
   }
 
@@ -458,6 +175,7 @@ window.KQ_RPG = (() => {
     rpg.menuIdx = 0;
     rpg.phase2Timer = 0;
     rpg.clickX = -1; rpg.clickY = -1;
+    rpg._navCooldown = 0;
 
     // Register mouse click listener (remove old one first)
     if (rpg._clickHandler) {
@@ -481,10 +199,11 @@ window.KQ_RPG = (() => {
   const BTN_W = 200, BTN_H = 260, BTN_Y = 130, BTN_GAP = 40;
   const BTN_STARTS = [80, 80 + BTN_W + BTN_GAP, 80 + (BTN_W + BTN_GAP) * 2];
 
-  function updateClassSelect() {
+  function updateClassSelect(dt) {
+    if (rpg._navCooldown > 0) rpg._navCooldown -= dt;
     // Keyboard nav
-    if (pressed('left'))  { rpg.classIdx = (rpg.classIdx + 2) % 3; beep('menu'); }
-    if (pressed('right')) { rpg.classIdx = (rpg.classIdx + 1) % 3; beep('menu'); }
+    if (rpg._navCooldown <= 0 && pressed('left'))  { rpg.classIdx = (rpg.classIdx + 2) % 3; beep('menu'); rpg._navCooldown = 0.18; }
+    if (rpg._navCooldown <= 0 && pressed('right')) { rpg.classIdx = (rpg.classIdx + 1) % 3; beep('menu'); rpg._navCooldown = 0.18; }
     if (pressed('shoot') || pressed('jump')) { confirmClass(rpg.classIdx); return; }
 
     // Mouse click
@@ -534,9 +253,11 @@ window.KQ_RPG = (() => {
       fillRect(bx, BTN_Y, BTN_W, BTN_H, selected ? '#2c1a5e' : '#1e1040');
       strokeRect(bx, BTN_Y, BTN_W, BTN_H, selected ? '#f1c40f' : '#555', selected ? 3 : 1);
       // Class color swatch
-      fillRect(bx + BTN_W / 2 - 30, BTN_Y + 18, 60, 60, cl.color);
+      if (!art(classArtKey(i), bx + BTN_W / 2 - 30, BTN_Y + 18, 60, 60)) {
+        fillRect(bx + BTN_W / 2 - 30, BTN_Y + 18, 60, 60, cl.color);
+        drawText(cl.icon, bx + BTN_W / 2, BTN_Y + 62, 28, '#fff', 'center');
+      }
       strokeRect(bx + BTN_W / 2 - 30, BTN_Y + 18, 60, 60, '#000', 1);
-      drawText(cl.icon, bx + BTN_W / 2, BTN_Y + 62, 28, '#fff', 'center');
       // Name
       drawText(cl.name, bx + BTN_W / 2, BTN_Y + 105, 20, selected ? '#f1c40f' : '#ecf0f1', 'center');
       // Stats
@@ -553,7 +274,7 @@ window.KQ_RPG = (() => {
         drawText('▼ SELECT ▼', bx + BTN_W / 2, BTN_Y + BTN_H - 16, 14, '#f1c40f', 'center');
       }
     }
-    drawText('◄ ► to highlight  |  JUMP/SHOOT to confirm', W / 2, H - 14, 13, '#7f8c8d', 'center');
+    drawText('Left / Right to choose  |  Space or B to confirm', W / 2, H - 14, 13, '#7f8c8d', 'center');
   }
 
   // ── DIALOG ───────────────────────────────────────────────────
@@ -599,7 +320,7 @@ window.KQ_RPG = (() => {
       const pageNum = rpg.dialogPage + 1;
       const total   = rpg.dialogLines.length;
       drawText(
-        pageNum < total ? 'JUMP/SHOOT → next page' : 'JUMP/SHOOT → continue',
+        pageNum < total ? 'Space or B -> next page' : 'Space or B -> continue',
         bx + bw - 18, by + bh - 14, 13, '#f1c40f', 'right'
       );
     }
@@ -706,7 +427,9 @@ window.KQ_RPG = (() => {
     const ex = rpg.exit.tx * TILE, ey = rpg.exit.ty * TILE;
     if (ex + TILE <= MAP_W) {
       fillRect(ex, ey, TILE, TILE, allDefeated ? '#f39c12' : '#555');
-      drawText(allDefeated ? '🚪' : '🔒', ex + TILE / 2, ey + TILE - 6, 28, '#fff', 'center');
+      if (!art('stairs', ex + 4, ey + 4, TILE - 8, TILE - 8)) {
+        drawText(allDefeated ? 'Exit' : 'Lock', ex + TILE / 2, ey + TILE - 6, 18, '#fff', 'center');
+      }
     }
 
     // Draw NPC
@@ -721,6 +444,9 @@ window.KQ_RPG = (() => {
       if (e.defeated) continue;
       const tmpl = ENEMY_TEMPLATES[e.idx];
       const ex2 = e.tx * TILE + 8, ey2 = e.ty * TILE + 8;
+      if (art(enemyArtKey(e.idx), ex2, ey2, 32, 32)) {
+        continue;
+      }
       // Circle face
       c.beginPath();
       c.arc(ex2 + 16, ey2 + 16, 16, 0, Math.PI * 2);
@@ -747,12 +473,14 @@ window.KQ_RPG = (() => {
 
     // Draw player
     const p = rpg.player;
-    fillRect(p.x, p.y, p.w, p.h, p.color);
-    strokeRect(p.x, p.y, p.w, p.h, '#000', 2);
-    // Hero face
-    fillRect(p.x + 6,  p.y + 8,  5, 5, '#1a0a2e');
-    fillRect(p.x + 17, p.y + 8,  5, 5, '#1a0a2e');
-    fillRect(p.x + 8,  p.y + 18, 12, 3, '#1a0a2e');
+    if (!art(classArtKey(p.classIdx), p.x, p.y, p.w, p.h)) {
+      fillRect(p.x, p.y, p.w, p.h, p.color);
+      strokeRect(p.x, p.y, p.w, p.h, '#000', 2);
+      // Hero face
+      fillRect(p.x + 6,  p.y + 8,  5, 5, '#1a0a2e');
+      fillRect(p.x + 17, p.y + 8,  5, 5, '#1a0a2e');
+      fillRect(p.x + 8,  p.y + 18, 12, 3, '#1a0a2e');
+    }
     // Class initial
     drawText(p.name[0], p.x + p.w / 2, p.y + p.h + 12, 11, '#f1c40f', 'center');
 
@@ -772,9 +500,11 @@ window.KQ_RPG = (() => {
 
     // Portrait
     const portSize = 80;
-    fillRect(px + 60, 12, portSize, portSize, p.color);
+    if (!art(classArtKey(p.classIdx), px + 60, 12, portSize, portSize)) {
+      fillRect(px + 60, 12, portSize, portSize, p.color);
+      drawText(p.name[0], px + 60 + portSize / 2, 12 + portSize - 16, 36, '#fff', 'center');
+    }
     strokeRect(px + 60, 12, portSize, portSize, '#f1c40f', 2);
-    drawText(p.name[0], px + 60 + portSize / 2, 12 + portSize - 16, 36, '#fff', 'center');
 
     let y = 108;
     drawText(p.name, px + PANEL_W / 2, y, 15, '#f1c40f', 'center'); y += 18;
@@ -814,6 +544,7 @@ window.KQ_RPG = (() => {
         atk: tmpl.atk, def: tmpl.def,
         exp: tmpl.exp, gold: tmpl.gold,
         isBoss: tmpl.isBoss,
+        artKey: enemyArtKey(overworldEnemy.idx),
         stunned: false,
       },
       log: [`A wild ${tmpl.name} appears!`],
@@ -1035,9 +766,11 @@ window.KQ_RPG = (() => {
 
     // ── Hero portrait (left) ──
     const heroX = 80, heroY = 180;
-    fillRect(heroX, heroY, 80, 100, p.color);
+    if (!art(classArtKey(p.classIdx), heroX, heroY, 80, 100)) {
+      fillRect(heroX, heroY, 80, 100, p.color);
+      drawText(p.name[0], heroX + 40, heroY + 65, 44, '#fff', 'center');
+    }
     strokeRect(heroX, heroY, 80, 100, '#f1c40f', 3);
-    drawText(p.name[0], heroX + 40, heroY + 65, 44, '#fff', 'center');
     // Shake if just got hit (simple: no state needed, enemy turn flickers)
     drawText(p.name, heroX + 40, heroY - 18, 14, '#f1c40f', 'center');
     // Player HP bar
@@ -1053,20 +786,24 @@ window.KQ_RPG = (() => {
     strokeRect(enX - 20, enY - 26, 120, 14, '#000', 1);
     drawText(`${e.name}  ${e.hp}/${e.maxHp}`, enX + 40, enY - 30, 12, '#ecf0f1', 'center');
 
-    c.beginPath();
-    c.arc(enX + 40, enY + 50, 50, 0, Math.PI * 2);
-    c.fillStyle = e.color;
-    c.fill();
-    c.strokeStyle = e.stunned ? '#f39c12' : '#000';
-    c.lineWidth = 3; c.stroke();
-    // Enemy face
-    c.fillStyle = '#000';
-    c.fillRect(enX + 20, enY + 30, 8, 8);
-    c.fillRect(enX + 52, enY + 30, 8, 8);
-    c.beginPath();
-    c.arc(enX + 40, enY + 62, 10, 0, Math.PI);
-    c.strokeStyle = '#000'; c.lineWidth = 2; c.stroke();
-    if (e.isBoss) drawText('👑', enX + 40, enY - 4, 18, '#f1c40f', 'center');
+    if (art(e.artKey, enX - 10, enY, 100, 100)) {
+      strokeRect(enX - 10, enY, 100, 100, e.stunned ? '#f39c12' : '#000', 3);
+    } else {
+      c.beginPath();
+      c.arc(enX + 40, enY + 50, 50, 0, Math.PI * 2);
+      c.fillStyle = e.color;
+      c.fill();
+      c.strokeStyle = e.stunned ? '#f39c12' : '#000';
+      c.lineWidth = 3; c.stroke();
+      // Enemy face
+      c.fillStyle = '#000';
+      c.fillRect(enX + 20, enY + 30, 8, 8);
+      c.fillRect(enX + 52, enY + 30, 8, 8);
+      c.beginPath();
+      c.arc(enX + 40, enY + 62, 10, 0, Math.PI);
+      c.strokeStyle = '#000'; c.lineWidth = 2; c.stroke();
+      if (e.isBoss) drawText('Boss', enX + 40, enY - 4, 14, '#f1c40f', 'center');
+    }
     if (e.stunned) drawText('💫 STUNNED', enX + 40, enY + 118, 14, '#f39c12', 'center');
 
     // ── Action menu (bottom-left) ──
@@ -1094,7 +831,7 @@ window.KQ_RPG = (() => {
 
     // Turn indicator
     if (bs.turn === 'player') {
-      drawText('Your turn — ↑↓ to select, JUMP/SHOOT to act', W / 2, H - 10, 12, '#f1c40f', 'center');
+      drawText('Your turn - Up/Down to select, Space or B to act', W / 2, H - 10, 12, '#f1c40f', 'center');
     } else if (bs.turn === 'enemy' || bs.turn === 'anim') {
       drawText('Enemy is acting...', W / 2, H - 10, 12, '#e74c3c', 'center');
     } else if (bs.turn === 'over') {
@@ -1109,7 +846,7 @@ window.KQ_RPG = (() => {
     dt = Math.min(dt, 0.1); // clamp for tab-switch spikes
 
     switch (rpg.phase) {
-      case 'classselect': updateClassSelect();     break;
+      case 'classselect': updateClassSelect(dt);   break;
       case 'dialog':      updateDialog(dt);        break;
       case 'overworld':   updateOverworld(dt);     break;
       case 'battle':      updateBattle(dt);        break;
@@ -1162,20 +899,3 @@ window.KQ_RPG = (() => {
 
 
 // ── Main loop ────────────────────────────────────────────────────────────────
-const MODULE = window.KQ_RPG;
-MODULE.init();
-
-let _lastTime = performance.now();
-function _loop(now){{
-  const dt = Math.min((now - _lastTime) / 1000, 0.05);
-  _lastTime = now;
-  ctx.clearRect(0,0,VIEW_W,VIEW_H);
-  if(_mode==='playing'||_mode==='gameover'||_mode==='win') MODULE.update(dt);
-  MODULE.render();
-  _drawHint();
-  requestAnimationFrame(_loop);
-}}
-requestAnimationFrame(_loop);
-</script>
-</body>
-</html>

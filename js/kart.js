@@ -51,6 +51,11 @@
     return outerDist > 1 || innerDist < 1;
   }
 
+  function art(key, x, y, w, h) {
+    const path = window.KQ_ASSETS && window.KQ_ASSETS.kart && window.KQ_ASSETS.kart[key];
+    return !!(path && window._KQ_DRAW_IMG && window._KQ_DRAW_IMG(path, x, y, w, h));
+  }
+
   // ── State ──────────────────────────────────────────────────────────────────
   let player, aiKarts, itemBoxes, countdown, raceStarted, raceOver;
   let showResult, resultTitle, resultSub;
@@ -105,8 +110,9 @@
 
     if (window._KQ_HINT) {
       window._KQ_HINT.show('kart', [
-        'Arrow keys to steer & accelerate',
-        'SPACE/DASH to use item',
+        'Left / Right to steer',
+        'Up or A button to go',
+        'B / Dash to use item',
         '3 laps to win!',
       ]);
     }
@@ -161,11 +167,12 @@
     const sm = player._speedMult || 1;
     const maxSpd = (player.boostTimer > 0 ? BOOST_SPEED : MAX_SPEED) * sm;
     const turnRate = 2.8;
+    const accelerating = P('up') || P('jump');
 
     if (P('left'))  player.angle -= turnRate * dt * (player.speed / maxSpd + 0.3);
     if (P('right')) player.angle += turnRate * dt * (player.speed / maxSpd + 0.3);
 
-    if (P('up')) {
+    if (accelerating) {
       player.speed = Math.min(player.speed + 400 * dt, maxSpd);
     } else if (P('down')) {
       player.speed = Math.max(player.speed - 500 * dt, 0);
@@ -374,6 +381,7 @@
       if (!box.active) return;
       const pulse = 1 + 0.12 * Math.sin(t * 4);
       const s = ITEM_BOX_SIZE * pulse;
+      if (art('itemBox', box.x - s / 2, box.y - s / 2, s, s)) return;
       // Glow
       ctx.save();
       ctx.shadowColor = '#fbbf24';
@@ -416,6 +424,11 @@
       ctx.fill();
     }
 
+    if (art(kart.isPlayer ? 'player' : 'rival', -KART_SIZE, -KART_SIZE, KART_SIZE * 2, KART_SIZE * 2)) {
+      ctx.restore();
+      return;
+    }
+
     // Kart body
     ctx.fillStyle = kart.color;
     ctx.beginPath();
@@ -446,7 +459,7 @@
   function drawHUD(ctx) {
     const pos = getRacePosition();
     const kmh = Math.round(player.speed * 3.6 * 0.35);
-    const itemEmoji = player.item === 'boost' ? '⚡' : player.item === 'shield' ? '🛡️' : '—';
+    const itemEmoji = player.item === 'boost' ? 'Boost' : player.item === 'shield' ? 'Shield' : '-';
 
     ctx.save();
     ctx.font = 'bold 20px system-ui';
@@ -456,11 +469,18 @@
     ctx.textAlign = 'left';
     ctx.fillText(`Lap ${Math.min(player.lapCount + 1, TOTAL_LAPS)} / ${TOTAL_LAPS}`, 16, 30);
     ctx.fillText(`${kmh} km/h`, 16, 56);
+    ctx.font = 'bold 13px system-ui';
+    ctx.fillText('Up/A: gas   B/Dash: item', 16, 82);
 
     ctx.textAlign = 'right';
+    ctx.font = 'bold 20px system-ui';
     ctx.fillText(ordinal(pos), W - 16, 30);
-    ctx.font = '22px system-ui';
-    ctx.fillText(itemEmoji, W - 16, 58);
+    if (player.item && art(player.item === 'boost' ? 'boost' : 'shield', W - 46, 38, 30, 30)) {
+      // Custom item icon drawn.
+    } else {
+      ctx.font = '18px system-ui';
+      ctx.fillText(itemEmoji, W - 16, 58);
+    }
     ctx.restore();
   }
 
@@ -535,3 +555,6 @@
   window.KQ_KART = { init, update, render };
 
 }());
+
+
+// ── Main loop ────────────────────────────────────────────────────────────────
