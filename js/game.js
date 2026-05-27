@@ -963,6 +963,7 @@
 
   function drawBoss() {
     if (!boss || !boss.alive) return;
+    const ASSETS = window.KQ_ASSETS || {};
     const bx = boss.x - cameraX;
     const bossArt = (ASSETS.enemies||{}).boss || (ASSETS.enemies||{}).walker;
     if (!drawImg(bossArt, bx, boss.y, boss.w, boss.h)) {

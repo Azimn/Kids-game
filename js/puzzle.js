@@ -160,7 +160,7 @@
     const pc=Math.floor((p.x+p.w/2)/TILE);
     const pr=Math.floor((p.y+p.h/2)/TILE);
     const t=tileAt(pr,pc);
-    if (t===T.ODOOR||t===T.LDOOR) return; // don't pass through locked
+    if (t===T.LDOOR) return; // locked door blocks; open door allows passage
     // right wall passage
     if (pc>=COLS-1 && tileAt(pr,COLS-1)===T.ODOOR) {
       if (currentRoom<2) {
