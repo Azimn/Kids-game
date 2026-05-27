@@ -3065,9 +3065,10 @@
 
       const authorName = KQ_SETTINGS.get('authorName') || '';
       const gameMode = KQ_SETTINGS.get('gameMode') || 'platformer';
+      const bakedSettings = KQ_SETTINGS.getAll();
 
       // Build a self-contained index.html with all JS inlined
-      const html = _buildExportHTML(fetched, artOverrides, authorName, gameMode, defaultArtDataURLs);
+      const html = _buildExportHTML(fetched, artOverrides, authorName, gameMode, defaultArtDataURLs, bakedSettings);
       const blob = new Blob([html], { type: 'text/html' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -3090,8 +3091,9 @@
     }
   }
 
-  function _buildExportHTML(files, artOverrides, authorName, gameMode, defaultArtDataURLs) {
+  function _buildExportHTML(files, artOverrides, authorName, gameMode, defaultArtDataURLs, bakedSettings) {
     defaultArtDataURLs = defaultArtDataURLs || {};
+    bakedSettings = bakedSettings || {};
     artOverrides = artOverrides || {};
     authorName = authorName || '';
     gameMode = gameMode || 'platformer';
@@ -3189,7 +3191,8 @@ for (const [k, v] of Object.entries(_bakedArt)) {
   try { localStorage.setItem('kq_art_v1_' + k, v); } catch(e) {}
 }
 window.KQ_EXPORT_CONFIG = {
-  gameMode: ${JSON.stringify(gameMode)}
+  gameMode: ${JSON.stringify(gameMode)},
+  settings: ${JSON.stringify(bakedSettings)}
 };
   </script>
   <script>${files['js/settings.js']}</script>
@@ -3216,8 +3219,17 @@ window.KQ_EXPORT_CONFIG = {
     const edPanel = document.getElementById('editorSidePanel');
     if (edPanel) KQ_EDITOR.init(canvas, edPanel);
 
-    if (window.KQ_EXPORT_CONFIG && window.KQ_EXPORT_CONFIG.gameMode) {
-      KQ_SETTINGS.set('gameMode', window.KQ_EXPORT_CONFIG.gameMode);
+    if (window.KQ_EXPORT_CONFIG) {
+      // Apply all settings baked in at export time (physics, lives, tints, etc.)
+      const cfg = window.KQ_EXPORT_CONFIG;
+      if (cfg.settings && typeof cfg.settings === 'object') {
+        for (const [k, v] of Object.entries(cfg.settings)) {
+          KQ_SETTINGS.set(k, v);
+        }
+      } else if (cfg.gameMode) {
+        // Legacy: older exports only stored gameMode
+        KQ_SETTINGS.set('gameMode', cfg.gameMode);
+      }
     }
 
     _initMenuEvents();
