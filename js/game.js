@@ -2997,6 +2997,63 @@
         catch (e) { fetched[f] = `/* could not load ${f} */`; }
       }
 
+      // Inline all default static assets as base64 data URLs so the
+      // exported HTML is fully self-contained (no assets/ folder needed).
+      const defaultAssetPaths = [
+        'assets/art/title-logo.png',
+        'assets/art/background.png',
+        'assets/art/player-idle.png','assets/art/player-run-1.png',
+        'assets/art/player-run-2.png','assets/art/player-jump.png',
+        'assets/art/player-hurt.png',
+        'assets/art/tile-ground.png','assets/art/tile-brick.png',
+        'assets/art/tile-question.png','assets/art/tile-breakable.png',
+        'assets/art/tile-spike.png','assets/art/goal-flag.png',
+        'assets/art/coin.png',
+        'assets/art/power-blaster.png','assets/art/power-shield.png',
+        'assets/art/power-double-jump.png','assets/art/power-dash.png',
+        'assets/art/power-giant.png',
+        'assets/art/enemy-walker.png','assets/art/enemy-jumper.png',
+        'assets/art/enemy-flyer.png','assets/art/enemy-boss.png',
+        'assets/art/projectile.png',
+        'assets/art/puzzle-hero.png','assets/art/puzzle-slime.png',
+        'assets/art/puzzle-boss.png','assets/art/puzzle-chest.png',
+        'assets/art/puzzle-key.png','assets/art/puzzle-door.png',
+        'assets/art/puzzle-block.png',
+        'assets/art/dungeon-warrior.png','assets/art/dungeon-wizard.png',
+        'assets/art/dungeon-rogue.png','assets/art/dungeon-goblin.png',
+        'assets/art/dungeon-orc.png','assets/art/dungeon-boss.png',
+        'assets/art/dungeon-stairs.png',
+        'assets/art/kart-player.png','assets/art/kart-rival.png',
+        'assets/art/kart-item-box.png','assets/art/kart-boost.png',
+        'assets/art/kart-shield.png'
+      ];
+      const defaultArtDataURLs = {};
+      await Promise.all(defaultAssetPaths.map(async path => {
+        try {
+          const resp = await fetch(path);
+          if (!resp.ok) return;
+          const blob = await resp.blob();
+          defaultArtDataURLs[path] = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = rej;
+            r.readAsDataURL(blob);
+          });
+        } catch (_) {}
+      }));
+      // Patch the inlined assets.js — replace every "assets/art/xxx.png"
+      // string literal with the corresponding data URL so the exported
+      // file needs no external files at all.
+      if (fetched['js/assets.js']) {
+        let assetsSrc = fetched['js/assets.js'];
+        for (const [path, dataURL] of Object.entries(defaultArtDataURLs)) {
+          // Replace quoted path strings e.g. "assets/art/foo.png" and 'assets/art/foo.png'
+          assetsSrc = assetsSrc.split(JSON.stringify(path)).join(JSON.stringify(dataURL));
+          assetsSrc = assetsSrc.split(`'${path}'`).join(`'${dataURL}'`);
+        }
+        fetched['js/assets.js'] = assetsSrc;
+      }
+
       // Collect all uploaded art as data URLs
       const artOverrides = {};
       if (window.KQ_ART) {
@@ -3010,7 +3067,7 @@
       const gameMode = KQ_SETTINGS.get('gameMode') || 'platformer';
 
       // Build a self-contained index.html with all JS inlined
-      const html = _buildExportHTML(fetched, artOverrides, authorName, gameMode);
+      const html = _buildExportHTML(fetched, artOverrides, authorName, gameMode, defaultArtDataURLs);
       const blob = new Blob([html], { type: 'text/html' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -3033,7 +3090,8 @@
     }
   }
 
-  function _buildExportHTML(files, artOverrides, authorName, gameMode) {
+  function _buildExportHTML(files, artOverrides, authorName, gameMode, defaultArtDataURLs) {
+    defaultArtDataURLs = defaultArtDataURLs || {};
     artOverrides = artOverrides || {};
     authorName = authorName || '';
     gameMode = gameMode || 'platformer';
@@ -3058,7 +3116,7 @@
     <section id="menuPanel" class="overlay-panel" style="display:flex">
       <div class="big-menu">
         <div class="game-title-area">
-          <img src="assets/art/title-logo.png" alt="Game Title" class="title-logo-img"
+          <img src="${defaultArtDataURLs['assets/art/title-logo.png'] || 'assets/art/title-logo.png'}" alt="Game Title" class="title-logo-img"
                onerror="this.style.display='none'; document.getElementById('title-text').style.display='block'"/>
           <div id="title-text" class="title-text-fallback" style="display:none">${title}</div>
         </div>
