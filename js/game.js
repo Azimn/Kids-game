@@ -3067,8 +3067,16 @@
       const gameMode = KQ_SETTINGS.get('gameMode') || 'platformer';
       const bakedSettings = KQ_SETTINGS.getAll();
 
+      // Capture custom levels from localStorage so the exported game
+      // includes any levels built in the editor.
+      let customLevelsJSON = null;
+      try {
+        const raw = localStorage.getItem('kq_custom_levels');
+        if (raw) customLevelsJSON = raw;
+      } catch (_) {}
+
       // Build a self-contained index.html with all JS inlined
-      const html = _buildExportHTML(fetched, artOverrides, authorName, gameMode, defaultArtDataURLs, bakedSettings);
+      const html = _buildExportHTML(fetched, artOverrides, authorName, gameMode, defaultArtDataURLs, bakedSettings, customLevelsJSON);
       const blob = new Blob([html], { type: 'text/html' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -3091,7 +3099,7 @@
     }
   }
 
-  function _buildExportHTML(files, artOverrides, authorName, gameMode, defaultArtDataURLs, bakedSettings) {
+  function _buildExportHTML(files, artOverrides, authorName, gameMode, defaultArtDataURLs, bakedSettings, customLevelsJSON) {
     defaultArtDataURLs = defaultArtDataURLs || {};
     bakedSettings = bakedSettings || {};
     artOverrides = artOverrides || {};
@@ -3190,6 +3198,8 @@ const _bakedArt = ${JSON.stringify(artOverrides)};
 for (const [k, v] of Object.entries(_bakedArt)) {
   try { localStorage.setItem('kq_art_v1_' + k, v); } catch(e) {}
 }
+// Baked-in custom levels from the level editor
+${customLevelsJSON ? `try { localStorage.setItem('kq_custom_levels', ${JSON.stringify(customLevelsJSON)}); } catch(e) {}` : '// (no custom levels)'}
 window.KQ_EXPORT_CONFIG = {
   gameMode: ${JSON.stringify(gameMode)},
   settings: ${JSON.stringify(bakedSettings)}
