@@ -286,6 +286,14 @@
     if (mode !== "playing" && mode !== "editor") handleStart();
   });
 
+  // In portrait on mobile the canvas is only the top ~220px.
+  // Make the whole gameShell tappable so "tap to restart" works anywhere.
+  document.getElementById('gameShell').addEventListener("pointerdown", (e) => {
+    if (e.target === canvas) return; // already handled above
+    if (mode === "gameover" || mode === "win") { ensureAudio(); handleStart(); }
+    else if (mode === "title") { ensureAudio(); beep('menu'); mode = "menu"; _showMenuPanel(); }
+  });
+
   canvas.addEventListener("pointermove", (e) => {
     if (mode === "paused") _handlePauseHover(e);
   });
