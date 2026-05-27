@@ -1380,7 +1380,7 @@
 
     // Gameover / win overlay
     if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${shooter.score}`, 'Press Enter or Tap to Try Again');
-    if (mode === 'win') drawOverlay('You Win! 🎉', `Score: ${shooter.score}`, 'Press Enter or Tap to Play Again');
+    if (mode === 'win') _drawCredits(ctx);
   }
 
   function _shooterFirePlayer() {
@@ -1831,7 +1831,7 @@
     ctx.fillText(`Wave ${Math.min(brawler.wave+1, BRAWLER_TOTAL_WAVES+1)} / ${BRAWLER_TOTAL_WAVES+1}`, VIEW_W - 16, 28);
 
     if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${brawler.score}`, 'Press Enter or Tap to Try Again');
-    if (mode === 'win')      drawOverlay('You Win! 🎉', `Score: ${brawler.score}`, 'Press Enter or Tap to Play Again');
+    if (mode === 'win')      _drawCredits(ctx);
   }
   function drawBackground() {
     const ASSETS = window.KQ_ASSETS || {};
@@ -2306,6 +2306,68 @@
     };
   }
 
+  // ── Credits / win screen ─────────────────────────────────
+  let _creditsFrame = 0;
+  let _creditsStars = null;
+  function _initCreditsStars() {
+    _creditsStars = [];
+    for (let i = 0; i < 20; i++) {
+      _creditsStars.push({
+        x: Math.random() * VIEW_W,
+        y: Math.random() * VIEW_H,
+        offset: Math.random() * Math.PI * 2
+      });
+    }
+  }
+  function _drawCredits(c) {
+    if (!_creditsStars) _initCreditsStars();
+    _creditsFrame++;
+    c = c || ctx;
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    // Dark background
+    c.fillStyle = '#050d1a';
+    c.fillRect(0, 0, VIEW_W, VIEW_H);
+    // Twinkling stars
+    _creditsStars.forEach((s, i) => {
+      const alpha = 0.4 + 0.6 * Math.abs(Math.sin(_creditsFrame / 20 + s.offset));
+      c.globalAlpha = alpha;
+      c.fillStyle = '#fbbf24';
+      c.beginPath();
+      c.arc(s.x, s.y, 2, 0, Math.PI * 2);
+      c.fill();
+    });
+    c.globalAlpha = 1;
+    // Card
+    c.fillStyle = 'rgba(15,23,42,0.92)';
+    _roundRect(150, 100, 660, 340, 28); c.fill();
+    c.strokeStyle = 'rgba(251,191,36,0.5)'; c.lineWidth = 2; c.stroke();
+    // "You Win!" title
+    c.fillStyle = '#fbbf24';
+    c.font = '900 64px system-ui, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'alphabetic';
+    c.fillText('🎉 You Win! 🎉', VIEW_W / 2, 200);
+    // Author name
+    const authorName = (window.KQ_SETTINGS && KQ_SETTINGS.get('authorName')) || '';
+    if (authorName) {
+      c.fillStyle = '#e2e8f0';
+      c.font = 'bold 24px system-ui, sans-serif';
+      c.fillText('A game by ' + authorName, VIEW_W / 2, 252);
+    }
+    // Kids Game Maker
+    c.fillStyle = '#64748b';
+    c.font = '16px system-ui, sans-serif';
+    c.fillText('Kids Game Maker', VIEW_W / 2, 360);
+    // Play again instruction
+    c.fillStyle = '#fbbf24';
+    c.font = 'bold 22px system-ui, sans-serif';
+    c.fillText('Press Enter / Space to play again', VIEW_W / 2, 402);
+    c.restore();
+  }
+  // Expose on window for genre modules
+  window._KQ_DRAW_CREDITS = _drawCredits;
+
   function drawOverlay(title, subtitle, button) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "rgba(2,6,23,.64)"; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -2568,11 +2630,15 @@
     } else if (mode === "win") {
       const LEVELS = window.KQ_LEVELS || [];
       const isLast = levelIndex >= LEVELS.length - 1 && playtestReturnMode !== 'editor';
-      drawOverlay(
-        isLast ? "You Win!" : "Level Clear!",
-        `Score: ${game.score} · Coins: ${game.coins}`,
-        isLast ? "Press R / Enter to Play Again" : "Next level loading…"
-      );
+      if (isLast) {
+        _drawCredits(ctx);
+      } else {
+        drawOverlay(
+          "Level Clear!",
+          `Score: ${game.score} · Coins: ${game.coins}`,
+          "Next level loading…"
+        );
+      }
     }
     drawHintPopup();
   }
@@ -2609,6 +2675,94 @@
       .join('');
     panel.style.display = 'flex';
   }
+  function _showGenreConfigPanel(gameMode) {
+    _hideAllPanels();
+    const panel = document.getElementById('noticePanel');
+    const titleEl = document.getElementById('notice-title');
+    const bodyEl = document.getElementById('notice-body');
+    const okBtn = document.getElementById('btn-notice-ok');
+    if (!panel || !titleEl || !bodyEl || !okBtn) return;
+
+    const configs = {
+      shooter: {
+        title: 'Customize Space Shooter',
+        fields: [
+          { key: 'shooterWaves', label: 'Number of Waves', type: 'range', min: 1, max: 10, def: 3 },
+          { key: 'shooterEnemiesPerWave', label: 'Enemies Per Wave', type: 'range', min: 1, max: 8, def: 4 },
+          { key: 'shooterBossHealth', label: 'Boss Health (stars)', type: 'range', min: 1, max: 5, def: 3 },
+        ]
+      },
+      brawler: {
+        title: 'Customize Beat-em-up',
+        fields: [
+          { key: 'shooterWaves', label: 'Number of Waves', type: 'range', min: 1, max: 10, def: 3 },
+          { key: 'shooterEnemiesPerWave', label: 'Enemies Per Wave', type: 'range', min: 1, max: 8, def: 4 },
+          { key: 'shooterBossHealth', label: 'Boss Health (stars)', type: 'range', min: 1, max: 5, def: 3 },
+        ]
+      },
+      dungeon: {
+        title: 'Customize Dungeon Adventure',
+        fields: [
+          { key: 'dungeonFloors', label: 'Dungeon Floors', type: 'range', min: 1, max: 5, def: 3 },
+          { key: 'dungeonDifficulty', label: 'Enemy Difficulty', type: 'range', min: 1, max: 5, def: 2 },
+          { key: 'dungeonStartClass', label: 'Starting Class', type: 'select', options: ['Warrior', 'Wizard', 'Rogue'], def: 'Warrior' },
+        ]
+      },
+      racer: {
+        title: 'Customize Kart Racer',
+        fields: [
+          { key: 'kartLaps', label: 'Number of Laps', type: 'range', min: 1, max: 5, def: 3 },
+          { key: 'kartRivalSpeed', label: 'Rival Speed', type: 'range', min: 1, max: 5, def: 3 },
+          { key: 'kartBoostPads', label: 'Include Boost Pads', type: 'toggle', def: true },
+        ]
+      },
+      puzzle: {
+        title: 'Customize Puzzle Room',
+        fields: [
+          { key: 'puzzleRoomSize', label: 'Room Size (1=Small 3=Large)', type: 'range', min: 1, max: 3, def: 2 },
+          { key: 'puzzleRooms', label: 'Number of Rooms', type: 'range', min: 1, max: 5, def: 3 },
+        ]
+      }
+    };
+
+    const cfg = configs[gameMode];
+    if (!cfg) return;
+
+    titleEl.textContent = cfg.title;
+    okBtn.textContent = 'Done';
+
+    const rows = cfg.fields.map(f => {
+      const val = KQ_SETTINGS.get(f.key) !== undefined ? KQ_SETTINGS.get(f.key) : f.def;
+      if (f.type === 'range') {
+        return `<div class="setting-row" style="margin:8px 0">
+          <label class="setting-label">${f.label}: <strong id="gcv-${f.key}">${val}</strong></label>
+          <input type="range" min="${f.min}" max="${f.max}" value="${val}"
+            style="width:100%" data-gckey="${f.key}"
+            oninput="document.getElementById('gcv-'+this.dataset.gckey).textContent=this.value; window.KQ_SETTINGS && KQ_SETTINGS.set(this.dataset.gckey, +this.value)">
+        </div>`;
+      } else if (f.type === 'select') {
+        const opts = f.options.map(o => `<option value="${o}"${o===val?' selected':''}>${o}</option>`).join('');
+        return `<div class="setting-row" style="margin:8px 0">
+          <label class="setting-label">${f.label}</label>
+          <select style="margin-left:8px" data-gckey="${f.key}"
+            onchange="window.KQ_SETTINGS && KQ_SETTINGS.set(this.dataset.gckey, this.value)">${opts}</select>
+        </div>`;
+      } else if (f.type === 'toggle') {
+        const checked = val ? 'checked' : '';
+        return `<div class="setting-row" style="margin:8px 0">
+          <label class="setting-label">${f.label}
+            <input type="checkbox" ${checked} data-gckey="${f.key}" style="margin-left:8px"
+              onchange="window.KQ_SETTINGS && KQ_SETTINGS.set(this.dataset.gckey, this.checked)">
+          </label>
+        </div>`;
+      }
+      return '';
+    }).join('');
+
+    bodyEl.innerHTML = rows;
+    panel.style.display = 'flex';
+  }
+
   function _hideAllPanels() {
     ['menuPanel','settingsPanel','editorPanel','artPanel','howToPanel','noticePanel'].forEach(id => {
       const el = document.getElementById(id);
@@ -2628,13 +2782,15 @@
     if (noticeOkBtn) noticeOkBtn.addEventListener('click', () => { beep('menu'); _showMenuPanel(); });
     window.KQ_NOTICE = _showNoticePanel;
 
-    // Build art manager UI
-    const artContainer = document.getElementById('art-slots-container');
-    if (artContainer && window.KQ_ART) KQ_ART.buildUI(artContainer);
+    // Build art manager UI (creator mode only)
+    if (!window._KQ_EXPORT_MODE) {
+      const artContainer = document.getElementById('art-slots-container');
+      if (artContainer && window.KQ_ART) KQ_ART.buildUI(artContainer);
 
-    // Art button
-    const btnArt = document.getElementById('btn-art');
-    if (btnArt) btnArt.addEventListener('click', () => { beep('menu'); _showArtPanel(); });
+      // Art button
+      const btnArt = document.getElementById('btn-art');
+      if (btnArt) btnArt.addEventListener('click', () => { beep('menu'); _showArtPanel(); });
+    }
 
     const moreToolsBtn = document.getElementById('btn-more-tools');
     const advancedDrawer = document.getElementById('advancedDrawer');
@@ -2667,7 +2823,8 @@
           'Move: Arrow Keys or WASD',
           'Shoot: Space, Enter, or X',
           'Goal: survive waves and defeat the boss',
-          'Tip: your Hero art becomes the ship'
+          'Tip: your Hero art becomes the ship',
+          'Create: use the Create button to customize waves and difficulty'
         ]
       },
       brawler: {
@@ -2677,7 +2834,8 @@
           'Move: Arrow Keys or WASD',
           'Punch: X or B button',
           'Jump: Space',
-          'Goal: beat the boss at the end'
+          'Goal: beat the boss at the end',
+          'Create: use the Create button to customize waves and boss health'
         ]
       },
       dungeon: {
@@ -2688,7 +2846,8 @@
           'Move: Arrow Keys or WASD',
           'Battle menu: Up / Down',
           'Choose action: Space, Enter, or X',
-          'Goal: defeat all guardians and reach the stairs'
+          'Goal: defeat all guardians and reach the stairs',
+          'Create: use the Create button to choose floors and starting class'
         ]
       },
       racer: {
@@ -2698,7 +2857,8 @@
           'Steer: Left / Right',
           'Gas: Up or A button',
           'Use item: X, B, or Dash',
-          'Goal: finish 3 laps'
+          'Goal: finish 3 laps',
+          'Create: use the Create button to adjust laps and rival speed'
         ]
       },
       puzzle: {
@@ -2708,7 +2868,8 @@
           'Move: Arrow Keys or WASD',
           'Sword: Space, Enter, or X',
           'Push blocks by walking into them',
-          'Goal: find the key and escape'
+          'Goal: find the key and escape',
+          'Create: use the Create button to set room size and number of rooms'
         ]
       }
     };
@@ -2756,14 +2917,13 @@
       if (text) text.textContent = info.blurb;
       const playSub = document.querySelector('#btn-play .kid-btn-sub');
       if (playSub) playSub.textContent = `Start ${info.label}`;
-      // Show/hide editor button based on genre (no editor for shooter)
+      // Editor button — works for all genres (platformer builds levels, others show config)
       const edBtn = document.getElementById('btn-editor');
       if (edBtn) {
-        const disabled = cur !== 'platformer';
-        edBtn.disabled = disabled;
-        edBtn.classList.toggle('is-disabled', disabled);
+        edBtn.disabled = false;
+        edBtn.classList.remove('is-disabled');
         const sub = edBtn.querySelector('.kid-btn-sub');
-        if (sub) sub.textContent = disabled ? 'Only for Platformer' : 'Build your world';
+        if (sub) sub.textContent = cur === 'platformer' ? 'Build your world' : 'Customize your game';
       }
     }
     document.querySelectorAll('.genre-btn').forEach(b => {
@@ -2785,16 +2945,15 @@
 
     const editorBtn = document.getElementById('btn-editor');
     if (editorBtn) editorBtn.addEventListener('click', () => {
-      if ((KQ_SETTINGS.get('gameMode') || 'platformer') !== 'platformer') {
-        _showNoticePanel('Build Levels', [
-          'The level editor is for Platformer games right now.',
-          'Open More Tools, choose Platformer, then come back to Build Levels.'
-        ]);
-        return;
+      beep('menu');
+      const gm = KQ_SETTINGS.get('gameMode') || 'platformer';
+      if (gm === 'platformer') {
+        mode = 'editor';
+        KQ_EDITOR.show();
+        _showEditorPanel();
+      } else {
+        _showGenreConfigPanel(gm);
       }
-      beep('menu'); mode = 'editor';
-      KQ_EDITOR.show();
-      _showEditorPanel();
     });
 
     const settingsBtn = document.getElementById('btn-settings');
@@ -2815,24 +2974,40 @@
     });
 
     const fullscreenBtn = document.getElementById('btn-fullscreen');
-    if (fullscreenBtn) fullscreenBtn.addEventListener('click', async () => {
-      beep('menu');
-      const shell = document.getElementById('gameShell');
-      try {
-        if (!document.fullscreenElement && shell && shell.requestFullscreen) {
-          await shell.requestFullscreen();
-          fullscreenBtn.textContent = 'Small Screen';
-        } else if (document.exitFullscreen) {
-          await document.exitFullscreen();
-          fullscreenBtn.textContent = 'Big Screen';
-        }
-      } catch (err) {
-        _showNoticePanel('Big Screen', ['Your browser did not allow fullscreen this time.']);
+    const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (fullscreenBtn) {
+      // iOS Safari blocks requestFullscreen; show a home-screen tip instead.
+      if (_isIOS) {
+        fullscreenBtn.textContent = 'Add to Home Screen';
+        fullscreenBtn.addEventListener('click', () => {
+          beep('menu');
+          _showNoticePanel('Play Fullscreen on iPhone', [
+            'Tap the Share button (the box with an arrow) at the bottom of Safari.',
+            'Then choose "Add to Home Screen".',
+            'Open the app icon for a fullscreen game!'
+          ], 'Got it');
+        });
+      } else {
+        fullscreenBtn.addEventListener('click', async () => {
+          beep('menu');
+          const shell = document.getElementById('gameShell');
+          try {
+            if (!document.fullscreenElement && shell && shell.requestFullscreen) {
+              await shell.requestFullscreen();
+              fullscreenBtn.textContent = 'Small Screen';
+            } else if (document.exitFullscreen) {
+              await document.exitFullscreen();
+              fullscreenBtn.textContent = 'Big Screen';
+            }
+          } catch (err) {
+            _showNoticePanel('Big Screen', ['Your browser did not allow fullscreen this time.']);
+          }
+        });
+        document.addEventListener('fullscreenchange', () => {
+          if (fullscreenBtn) fullscreenBtn.textContent = document.fullscreenElement ? 'Small Screen' : 'Big Screen';
+        });
       }
-    });
-    document.addEventListener('fullscreenchange', () => {
-      if (fullscreenBtn) fullscreenBtn.textContent = document.fullscreenElement ? 'Small Screen' : 'Big Screen';
-    });
+    }
 
     const settingsBackBtn = document.getElementById('btn-settings-back');
     if (settingsBackBtn) settingsBackBtn.addEventListener('click', () => {
@@ -2986,8 +3161,8 @@
     try {
       // Collect all JS and CSS source files as text
       const filesToFetch = [
-        'js/settings.js', 'js/sounds.js', 'js/gamepad.js', 'js/artmanager.js',
-        'js/assets.js', 'js/levels.js', 'js/editor.js',
+        'js/settings.js', 'js/sounds.js', 'js/gamepad.js',
+        'js/assets.js', 'js/levels.js',
         'js/puzzle.js', 'js/dungeon.js', 'js/kart.js',
         'js/game.js', 'style.css'
       ];
@@ -2995,6 +3170,63 @@
       for (const f of filesToFetch) {
         try { fetched[f] = await (await fetch(f)).text(); }
         catch (e) { fetched[f] = `/* could not load ${f} */`; }
+      }
+
+      // Inline all default static assets as base64 data URLs so the
+      // exported HTML is fully self-contained (no assets/ folder needed).
+      const defaultAssetPaths = [
+        'assets/art/title-logo.png',
+        'assets/art/background.png',
+        'assets/art/player-idle.png','assets/art/player-run-1.png',
+        'assets/art/player-run-2.png','assets/art/player-jump.png',
+        'assets/art/player-hurt.png',
+        'assets/art/tile-ground.png','assets/art/tile-brick.png',
+        'assets/art/tile-question.png','assets/art/tile-breakable.png',
+        'assets/art/tile-spike.png','assets/art/goal-flag.png',
+        'assets/art/coin.png',
+        'assets/art/power-blaster.png','assets/art/power-shield.png',
+        'assets/art/power-double-jump.png','assets/art/power-dash.png',
+        'assets/art/power-giant.png',
+        'assets/art/enemy-walker.png','assets/art/enemy-jumper.png',
+        'assets/art/enemy-flyer.png','assets/art/enemy-boss.png',
+        'assets/art/projectile.png',
+        'assets/art/puzzle-hero.png','assets/art/puzzle-slime.png',
+        'assets/art/puzzle-boss.png','assets/art/puzzle-chest.png',
+        'assets/art/puzzle-key.png','assets/art/puzzle-door.png',
+        'assets/art/puzzle-block.png',
+        'assets/art/dungeon-warrior.png','assets/art/dungeon-wizard.png',
+        'assets/art/dungeon-rogue.png','assets/art/dungeon-goblin.png',
+        'assets/art/dungeon-orc.png','assets/art/dungeon-boss.png',
+        'assets/art/dungeon-stairs.png',
+        'assets/art/kart-player.png','assets/art/kart-rival.png',
+        'assets/art/kart-item-box.png','assets/art/kart-boost.png',
+        'assets/art/kart-shield.png'
+      ];
+      const defaultArtDataURLs = {};
+      await Promise.all(defaultAssetPaths.map(async path => {
+        try {
+          const resp = await fetch(path);
+          if (!resp.ok) return;
+          const blob = await resp.blob();
+          defaultArtDataURLs[path] = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = rej;
+            r.readAsDataURL(blob);
+          });
+        } catch (_) {}
+      }));
+      // Patch the inlined assets.js — replace every "assets/art/xxx.png"
+      // string literal with the corresponding data URL so the exported
+      // file needs no external files at all.
+      if (fetched['js/assets.js']) {
+        let assetsSrc = fetched['js/assets.js'];
+        for (const [path, dataURL] of Object.entries(defaultArtDataURLs)) {
+          // Replace quoted path strings e.g. "assets/art/foo.png" and 'assets/art/foo.png'
+          assetsSrc = assetsSrc.split(JSON.stringify(path)).join(JSON.stringify(dataURL));
+          assetsSrc = assetsSrc.split(`'${path}'`).join(`'${dataURL}'`);
+        }
+        fetched['js/assets.js'] = assetsSrc;
       }
 
       // Collect all uploaded art as data URLs
@@ -3008,9 +3240,18 @@
 
       const authorName = KQ_SETTINGS.get('authorName') || '';
       const gameMode = KQ_SETTINGS.get('gameMode') || 'platformer';
+      const bakedSettings = KQ_SETTINGS.getAll();
+
+      // Capture custom levels from localStorage so the exported game
+      // includes any levels built in the editor.
+      let customLevelsJSON = null;
+      try {
+        const raw = localStorage.getItem('kq_custom_levels');
+        if (raw) customLevelsJSON = raw;
+      } catch (_) {}
 
       // Build a self-contained index.html with all JS inlined
-      const html = _buildExportHTML(fetched, artOverrides, authorName, gameMode);
+      const html = _buildExportHTML(fetched, artOverrides, authorName, gameMode, defaultArtDataURLs, bakedSettings, customLevelsJSON);
       const blob = new Blob([html], { type: 'text/html' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -3033,7 +3274,9 @@
     }
   }
 
-  function _buildExportHTML(files, artOverrides, authorName, gameMode) {
+  function _buildExportHTML(files, artOverrides, authorName, gameMode, defaultArtDataURLs, bakedSettings, customLevelsJSON) {
+    defaultArtDataURLs = defaultArtDataURLs || {};
+    bakedSettings = bakedSettings || {};
     artOverrides = artOverrides || {};
     authorName = authorName || '';
     gameMode = gameMode || 'platformer';
@@ -3058,7 +3301,7 @@
     <section id="menuPanel" class="overlay-panel" style="display:flex">
       <div class="big-menu">
         <div class="game-title-area">
-          <img src="assets/art/title-logo.png" alt="Game Title" class="title-logo-img"
+          <img src="${defaultArtDataURLs['assets/art/title-logo.png'] || 'assets/art/title-logo.png'}" alt="Game Title" class="title-logo-img"
                onerror="this.style.display='none'; document.getElementById('title-text').style.display='block'"/>
           <div id="title-text" class="title-text-fallback" style="display:none">${title}</div>
         </div>
@@ -3077,11 +3320,9 @@
         </div>
         <!-- Hidden stubs so game.js event wiring doesn't crash -->
         <button id="btn-editor"  style="display:none"></button>
-        <button id="btn-art"     style="display:none"></button>
         <button id="btn-export"  style="display:none"></button>
       </div>
     </section>
-    <section id="artPanel" class="overlay-panel" style="display:none"><div id="art-slots-container"></div></section>
     <section id="settingsPanel" class="overlay-panel" style="display:none">
       <div class="menu-card settings-card">
         <div class="panel-header">
@@ -3109,9 +3350,6 @@
         <button class="notice-btn" id="btn-notice-ok">OK</button>
       </div>
     </section>
-    <section id="editorPanel" class="overlay-panel" style="display:none">
-      <div id="editorSidePanel"></div>
-    </section>
     <nav id="touchControls" aria-label="Touch controls">
       <div class="touch-left">
         <button data-touch="left" aria-label="Move left">Left</button>
@@ -3130,17 +3368,20 @@ const _bakedArt = ${JSON.stringify(artOverrides)};
 for (const [k, v] of Object.entries(_bakedArt)) {
   try { localStorage.setItem('kq_art_v1_' + k, v); } catch(e) {}
 }
+// Baked-in custom levels from the level editor
+${customLevelsJSON ? `try { localStorage.setItem('kq_custom_levels', ${JSON.stringify(customLevelsJSON)}); } catch(e) {}` : '// (no custom levels)'}
 window.KQ_EXPORT_CONFIG = {
-  gameMode: ${JSON.stringify(gameMode)}
+  gameMode: ${JSON.stringify(gameMode)},
+  settings: ${JSON.stringify(bakedSettings)}
 };
+// Suppress engine-only globals in the exported game
+window._KQ_EXPORT_MODE = true;
   </script>
   <script>${files['js/settings.js']}</script>
   <script>${files['js/sounds.js']}</script>
   <script>${files['js/gamepad.js']}</script>
-  <script>${files['js/artmanager.js']}</script>
   <script>${files['js/assets.js']}</script>
   <script>${files['js/levels.js']}</script>
-  <script>${files['js/editor.js']}</script>
   <script>${files['js/puzzle.js']}</script>
   <script>${files['js/dungeon.js']}</script>
   <script>${files['js/kart.js']}</script>
@@ -3154,12 +3395,23 @@ window.KQ_EXPORT_CONFIG = {
     loadImages();
     _installFrameworkBridge();
 
-    // Init level editor with canvas + side panel
-    const edPanel = document.getElementById('editorSidePanel');
-    if (edPanel) KQ_EDITOR.init(canvas, edPanel);
+    // Init level editor with canvas + side panel (creator mode only)
+    if (!window._KQ_EXPORT_MODE) {
+      const edPanel = document.getElementById('editorSidePanel');
+      if (edPanel && window.KQ_EDITOR) KQ_EDITOR.init(canvas, edPanel);
+    }
 
-    if (window.KQ_EXPORT_CONFIG && window.KQ_EXPORT_CONFIG.gameMode) {
-      KQ_SETTINGS.set('gameMode', window.KQ_EXPORT_CONFIG.gameMode);
+    if (window.KQ_EXPORT_CONFIG) {
+      // Apply all settings baked in at export time (physics, lives, tints, etc.)
+      const cfg = window.KQ_EXPORT_CONFIG;
+      if (cfg.settings && typeof cfg.settings === 'object') {
+        for (const [k, v] of Object.entries(cfg.settings)) {
+          KQ_SETTINGS.set(k, v);
+        }
+      } else if (cfg.gameMode) {
+        // Legacy: older exports only stored gameMode
+        KQ_SETTINGS.set('gameMode', cfg.gameMode);
+      }
     }
 
     _initMenuEvents();

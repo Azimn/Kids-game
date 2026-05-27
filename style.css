@@ -38,16 +38,30 @@ canvas#game {
     height: 100vh;
     top: 0;
     transform: none;
+    background: #0f172a; /* dark fill below the canvas */
   }
 
   canvas#game {
     position: absolute;
     left: 0;
-    top: 50%;
+    top: 0;           /* anchor to top so controls can sit just below */
     width: 100vw;
     height: calc(100vw * 9 / 16);
-    transform: translateY(-50%);
+    transform: none;
     background: #000;
+  }
+
+  /* Touch controls just below the canvas, not at screen-bottom */
+  #touchControls {
+    top: calc(100vw * 9 / 16 + 10px);
+    bottom: auto;
+  }
+
+  /* Slightly larger buttons — we have vertical room in portrait */
+  #touchControls button {
+    width: clamp(68px, 18vw, 92px);
+    height: clamp(68px, 18vw, 92px);
+    font-size: clamp(18px, 5.5vw, 28px);
   }
 }
 
@@ -892,3 +906,25 @@ canvas#game {
 ::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 3px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+
+/* ── Portrait rotate nudge ────────────────────────────────── */
+#rotateHint {
+  display: none; /* hidden by default and in landscape */
+  position: absolute;
+  left: 0; right: 0;
+  top: calc(100vw * 9 / 16 + 110px); /* below touch controls */
+  text-align: center;
+  color: rgba(255,255,255,0.35);
+  font-size: 13px;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+  z-index: 5;
+  user-select: none;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotateHint { display: block; }
+  /* Hide nudge when any overlay panel is open */
+  body:has(.overlay-panel[style*="display: flex"]) #rotateHint,
+  body:has(.overlay-panel[style*="display:flex"])   #rotateHint { display: none; }
+}

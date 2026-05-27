@@ -452,6 +452,13 @@
       );
     });
 
+    // Driver label
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(KART_SIZE * 0.6)}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('K', 0, 0);
+
     ctx.restore();
   }
 
@@ -550,7 +557,11 @@
     if (window._KQ_HINT) window._KQ_HINT.draw();
 
     if (showResult) {
-      _kartOverlay(resultTitle, resultSub);
+      if (resultTitle === 'You Win!' && window._KQ_DRAW_CREDITS) {
+        window._KQ_DRAW_CREDITS(window._KQ_CTX);
+      } else {
+        _kartOverlay(resultTitle, resultSub);
+      }
     }
   }
 

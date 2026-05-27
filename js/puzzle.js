@@ -376,7 +376,10 @@
       ctx.fillRect(0,0,ROOM_W,ROOM_H);
       ctx.globalAlpha=1;
     }
-    if (gameState==='win') drawOverlay(ctx,'YOU ESCAPED!','Puzzle solved - great job!','Press Space to continue','#ffd700');
+    if (gameState==='win') {
+      if (window._KQ_DRAW_CREDITS) { window._KQ_DRAW_CREDITS(ctx); }
+      else drawOverlay(ctx,'YOU ESCAPED!','Puzzle solved - great job!','Press Space to continue','#ffd700');
+    }
     if (gameState==='dead') drawOverlay(ctx,'GAME OVER','You ran out of hearts...','Press Space to try again','#ff4444');
     ctx.restore();
   }

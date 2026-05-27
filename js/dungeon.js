@@ -254,8 +254,22 @@ window.KQ_RPG = (() => {
       strokeRect(bx, BTN_Y, BTN_W, BTN_H, selected ? '#f1c40f' : '#555', selected ? 3 : 1);
       // Class color swatch
       if (!art(classArtKey(i), bx + BTN_W / 2 - 30, BTN_Y + 18, 60, 60)) {
-        fillRect(bx + BTN_W / 2 - 30, BTN_Y + 18, 60, 60, cl.color);
-        drawText(cl.icon, bx + BTN_W / 2, BTN_Y + 62, 28, '#fff', 'center');
+        const cx2 = bx + BTN_W / 2, cy2 = BTN_Y + 48;
+        const c2 = ctx();
+        c2.save();
+        c2.beginPath();
+        c2.arc(cx2, cy2, 30, 0, Math.PI * 2);
+        c2.fillStyle = cl.color;
+        c2.fill();
+        c2.strokeStyle = 'rgba(255,255,255,0.4)';
+        c2.lineWidth = 2;
+        c2.stroke();
+        c2.fillStyle = '#fff';
+        c2.font = 'bold 22px system-ui';
+        c2.textAlign = 'center';
+        c2.textBaseline = 'middle';
+        c2.fillText(cl.name[0], cx2, cy2);
+        c2.restore();
       }
       strokeRect(bx + BTN_W / 2 - 30, BTN_Y + 18, 60, 60, '#000', 1);
       // Name
