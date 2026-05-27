@@ -9,6 +9,8 @@ html, body {
   color: #f8fafc;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  touch-action: manipulation; /* kill double-tap zoom; iOS ignores user-scalable=no */
+  overscroll-behavior: none;  /* stop pull-to-refresh / rubber-band during play */
 }
 
 /* ── Game shell ───────────────────────────────────────────── */
@@ -179,7 +181,7 @@ canvas#game {
   position: absolute;
   left: 24px;
   right: 24px;
-  bottom: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -804,7 +806,9 @@ canvas#game {
 ══════════════════════════════════════════════════════════ */
 #touchControls {
   position: absolute;
-  bottom: 10px; left: 0; right: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  left: env(safe-area-inset-left, 0px);
+  right: env(safe-area-inset-right, 0px);
   display: none;
   justify-content: space-between;
   padding: 0 12px;
@@ -849,8 +853,8 @@ canvas#game {
 }
 
 #touchControls button {
-  width: clamp(54px, 13vw, 72px);
-  height: clamp(54px, 13vw, 72px);
+  width: clamp(60px, 15vw, 80px);
+  height: clamp(60px, 15vw, 80px);
   border-radius: 50%; border: none;
   background: rgba(255,255,255,0.2);
   color: #fff;
@@ -859,6 +863,8 @@ canvas#game {
   backdrop-filter: blur(6px);
   transition: background 0.1s, transform 0.1s;
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none; user-select: none;
+  touch-action: manipulation;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 #touchControls button.isDown {

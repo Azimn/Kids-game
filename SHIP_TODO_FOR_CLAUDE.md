@@ -4,6 +4,21 @@ This build is usable and smoke-tested, but these are the next items I would hand
 
 ## Highest priority
 
+0. Rebuild the default Platformer levels from proven hand-crafted layouts. (BLOCKER)
+   - Problem: the current default levels in `js/levels.js` were AI-generated. Some are
+     literally unwinnable (gaps too wide, no reachable path to the flag) and others are
+     unfairly hard because enemies/spikes were sprinkled in at random.
+   - Fix: transcribe known-good layouts from a hand-crafted classic (Super Mario Bros.
+     1-1, 1-2, etc., or the Game Boy Super Mario Land levels). Those were tuned by hand,
+     so reproducing their tile/enemy/coin positions guarantees a beatable, well-paced level.
+   - How: map the source layout onto our grid. Tile size is 48px, maps are arrays of
+     equal-length strings (legend at the top of `js/levels.js`: `.`=air `X`=ground
+     `?`=question `B`=breakable `S`=spike `F`=flag). Enemies/coins/powerups use pixel
+     X/Y (col*48, row*48).
+   - Acceptance: every default level is completable start-to-flag without taking
+     unavoidable damage, and difficulty ramps gently across the set.
+   - Note: deferred for now per product owner — captured here so it isn't lost.
+
 1. Run a real kid-mode UX pass.
    - Goal: a young child should understand the default Platformer flow without reading instructions.
    - Watch for tiny labels, clipped buttons, confusing advanced drawers, and places where the app exposes too many choices at once.
