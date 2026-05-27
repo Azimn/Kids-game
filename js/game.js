@@ -2628,13 +2628,15 @@
     if (noticeOkBtn) noticeOkBtn.addEventListener('click', () => { beep('menu'); _showMenuPanel(); });
     window.KQ_NOTICE = _showNoticePanel;
 
-    // Build art manager UI
-    const artContainer = document.getElementById('art-slots-container');
-    if (artContainer && window.KQ_ART) KQ_ART.buildUI(artContainer);
+    // Build art manager UI (creator mode only)
+    if (!window._KQ_EXPORT_MODE) {
+      const artContainer = document.getElementById('art-slots-container');
+      if (artContainer && window.KQ_ART) KQ_ART.buildUI(artContainer);
 
-    // Art button
-    const btnArt = document.getElementById('btn-art');
-    if (btnArt) btnArt.addEventListener('click', () => { beep('menu'); _showArtPanel(); });
+      // Art button
+      const btnArt = document.getElementById('btn-art');
+      if (btnArt) btnArt.addEventListener('click', () => { beep('menu'); _showArtPanel(); });
+    }
 
     const moreToolsBtn = document.getElementById('btn-more-tools');
     const advancedDrawer = document.getElementById('advancedDrawer');
@@ -2986,8 +2988,8 @@
     try {
       // Collect all JS and CSS source files as text
       const filesToFetch = [
-        'js/settings.js', 'js/sounds.js', 'js/gamepad.js', 'js/artmanager.js',
-        'js/assets.js', 'js/levels.js', 'js/editor.js',
+        'js/settings.js', 'js/sounds.js', 'js/gamepad.js',
+        'js/assets.js', 'js/levels.js',
         'js/puzzle.js', 'js/dungeon.js', 'js/kart.js',
         'js/game.js', 'style.css'
       ];
@@ -3145,11 +3147,9 @@
         </div>
         <!-- Hidden stubs so game.js event wiring doesn't crash -->
         <button id="btn-editor"  style="display:none"></button>
-        <button id="btn-art"     style="display:none"></button>
         <button id="btn-export"  style="display:none"></button>
       </div>
     </section>
-    <section id="artPanel" class="overlay-panel" style="display:none"><div id="art-slots-container"></div></section>
     <section id="settingsPanel" class="overlay-panel" style="display:none">
       <div class="menu-card settings-card">
         <div class="panel-header">
@@ -3177,9 +3177,6 @@
         <button class="notice-btn" id="btn-notice-ok">OK</button>
       </div>
     </section>
-    <section id="editorPanel" class="overlay-panel" style="display:none">
-      <div id="editorSidePanel"></div>
-    </section>
     <nav id="touchControls" aria-label="Touch controls">
       <div class="touch-left">
         <button data-touch="left" aria-label="Move left">Left</button>
@@ -3204,14 +3201,14 @@ window.KQ_EXPORT_CONFIG = {
   gameMode: ${JSON.stringify(gameMode)},
   settings: ${JSON.stringify(bakedSettings)}
 };
+// Suppress engine-only globals in the exported game
+window._KQ_EXPORT_MODE = true;
   </script>
   <script>${files['js/settings.js']}</script>
   <script>${files['js/sounds.js']}</script>
   <script>${files['js/gamepad.js']}</script>
-  <script>${files['js/artmanager.js']}</script>
   <script>${files['js/assets.js']}</script>
   <script>${files['js/levels.js']}</script>
-  <script>${files['js/editor.js']}</script>
   <script>${files['js/puzzle.js']}</script>
   <script>${files['js/dungeon.js']}</script>
   <script>${files['js/kart.js']}</script>
@@ -3225,9 +3222,11 @@ window.KQ_EXPORT_CONFIG = {
     loadImages();
     _installFrameworkBridge();
 
-    // Init level editor with canvas + side panel
-    const edPanel = document.getElementById('editorSidePanel');
-    if (edPanel) KQ_EDITOR.init(canvas, edPanel);
+    // Init level editor with canvas + side panel (creator mode only)
+    if (!window._KQ_EXPORT_MODE) {
+      const edPanel = document.getElementById('editorSidePanel');
+      if (edPanel && window.KQ_EDITOR) KQ_EDITOR.init(canvas, edPanel);
+    }
 
     if (window.KQ_EXPORT_CONFIG) {
       // Apply all settings baked in at export time (physics, lives, tints, etc.)
