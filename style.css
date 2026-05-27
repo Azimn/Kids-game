@@ -820,16 +820,49 @@ canvas#game {
 @media (pointer: coarse) { #touchControls { display: flex; } }
 
 /* Portrait: controls sit just below the canvas, not at the screen bottom.
-   This rule must come AFTER the base #touchControls { bottom:... } above. */
+   !important needed to beat the base #touchControls and button rules below. */
 @media (orientation: portrait) and (pointer: coarse) {
   #touchControls {
-    top: calc(100vw * 9 / 16 + 10px);
-    bottom: auto;
+    top: calc(100vw * 9 / 16 + 10px) !important;
+    bottom: auto !important;
   }
   #touchControls button {
-    width: clamp(68px, 18vw, 92px);
-    height: clamp(68px, 18vw, 92px);
-    font-size: clamp(18px, 5.5vw, 28px);
+    width:  clamp(68px, 18vw, 92px) !important;
+    height: clamp(68px, 18vw, 92px) !important;
+    font-size: clamp(18px, 5.5vw, 28px) !important;
+  }
+}
+
+/* Landscape mobile: shrink canvas to leave a dedicated control bar below.
+   No more overlay — controls are completely outside the game area. */
+@media (orientation: landscape) and (pointer: coarse) {
+  :root { --ctrl-bar: 72px; }
+
+  #gameShell {
+    /* Reserve the control bar at the bottom */
+    height: calc(100vh - var(--ctrl-bar));
+    width: min(calc((100vh - var(--ctrl-bar)) * 16 / 9), 100vw, 960px);
+    top: 0;
+    transform: none;
+  }
+
+  #touchControls {
+    position: fixed;
+    top: auto !important;
+    bottom: env(safe-area-inset-bottom, 0px) !important;
+    left: 0;
+    right: 0;
+    height: var(--ctrl-bar);
+    padding: 6px 16px !important;
+    background: #0a0f1a;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    align-items: center;
+  }
+
+  #touchControls button {
+    width:  54px !important;
+    height: 54px !important;
+    font-size: 18px !important;
   }
 }
 
