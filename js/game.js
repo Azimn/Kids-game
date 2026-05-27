@@ -182,6 +182,8 @@
   }
 
   function beep(type = "coin") {
+    // Delegate to ZzFX sounds if loaded, fall back to basic oscillator
+    if (window.KQ_SFX) { window.KQ_SFX(type); return; }
     if (!audioCtx) return;
     const vol = KQ_SETTINGS.get('sfxVolume');
     const now = audioCtx.currentTime;
@@ -3020,7 +3022,7 @@
     try {
       // Collect all JS and CSS source files as text
       const filesToFetch = [
-        'js/settings.js', 'js/gamepad.js', 'js/artmanager.js',
+        'js/settings.js', 'js/sounds.js', 'js/gamepad.js', 'js/artmanager.js',
         'js/assets.js', 'js/levels.js', 'js/editor.js', 'js/game.js', 'style.css'
       ];
       const fetched = {};
@@ -3148,6 +3150,7 @@ for (const [k, v] of Object.entries(_bakedArt)) {
 try { localStorage.setItem('kq_settings', ${JSON.stringify(JSON.stringify(bakedSettings))}); } catch(e) {}
 </script>
   <script>${files['js/settings.js']}</script>
+  <script>${files['js/sounds.js']}</script>
   <script>${files['js/gamepad.js']}</script>
   <script>${files['js/artmanager.js']}</script>
   <script>${files['js/assets.js']}</script>

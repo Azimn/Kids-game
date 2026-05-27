@@ -174,9 +174,12 @@ requestAnimationFrame(_loop);
 def build(title, js_file, module_global, out_file):
     with open(js_file, 'r') as f:
         module_js = f.read()
+    with open('js/sounds.js', 'r') as f:
+        sounds_js = f.read()
     html = SCAFFOLD
     html = html.replace('__TITLE__', title)
-    html = html.replace('__MODULE_JS__', module_js)
+    # Inject ZzFX sounds before the module JS, then replace _KQ_BEEP with KQ_SFX
+    html = html.replace('__MODULE_JS__', sounds_js + '\n\n' + module_js)
     html = html.replace('__MODULE_GLOBAL__', module_global)
     with open(out_file, 'w') as f:
         f.write(html)
