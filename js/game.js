@@ -2560,7 +2560,7 @@
     drawHud();
 
     if (!imagesLoaded) {
-      drawOverlay("Kid Quest", "Loading art files…", "Almost ready");
+      drawOverlay("Kids Game Maker", "Loading art files…", "Almost ready");
     } else if (mode === "paused") {
       drawPauseMenu();
     } else if (mode === "gameover") {
@@ -2879,37 +2879,78 @@
           style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);color:#f1f5f9;font-size:14px"/>
       </div>`;
 
-    const defs = [
+    // Grouped so young kids see only the simple options first.
+    // "More" and "Debug" are collapsed by default.
+    const easySliders = [
+      { key: 'startLives',      label: 'Starting Lives',    min: 1,   max: 10,  step: 1   },
+      { key: 'sfxVolume',       label: 'Sound Volume',      min: 0,   max: 1.0, step: 0.1 },
+    ];
+    const easyToggles = [
+      { key: 'infiniteLives',  label: '∞ Never Run Out of Lives' },
+    ];
+    const moreSliders = [
       { key: 'gravityMult',     label: 'Gravity',           min: 0.2, max: 3.0, step: 0.1 },
       { key: 'speedMult',       label: 'Player Speed',      min: 0.3, max: 3.0, step: 0.1 },
       { key: 'jumpMult',        label: 'Jump Height',       min: 0.3, max: 3.0, step: 0.1 },
       { key: 'enemySpeedMult',  label: 'Enemy Speed',       min: 0.0, max: 3.0, step: 0.1 },
       { key: 'projectileSpeed', label: 'Projectile Speed',  min: 0.3, max: 3.0, step: 0.1 },
-      { key: 'startLives',      label: 'Starting Lives',    min: 1,   max: 10,  step: 1   },
-      { key: 'sfxVolume',       label: 'Sound Volume',      min: 0,   max: 1.0, step: 0.1 },
     ];
-    const toggleDefs = [
-      { key: 'infiniteLives',  label: '∞ Infinite Lives'   },
+    const moreToggles = [
       { key: 'invincibleMode', label: '🦸 God Mode (no damage)' },
       { key: 'alwaysBlaster',  label: '🔫 Start with Blaster' },
-      { key: 'showHitboxes',   label: '🟩 Show Hitboxes (debug)' },
+    ];
+    const debugToggles = [
+      { key: 'showHitboxes',   label: '🟩 Show Hitboxes' },
+    ];
+    const tintDefs = [
+      { key: 'tintPlayer', label: '🦸 Hero Color' },
+      { key: 'tintWalker', label: '👾 Walker Enemy' },
+      { key: 'tintJumper', label: '🐸 Jumper Enemy' },
+      { key: 'tintFlyer',  label: '🦋 Flyer Enemy' },
+      { key: 'tintCoin',   label: '⭐ Coin Color' },
     ];
 
-    container.innerHTML = authorRow + defs.map(d => `
+    const sliderRow = d => `
       <div class="setting-row">
         <label class="setting-label">${d.label}</label>
         <input type="range" class="setting-slider" data-key="${d.key}"
           min="${d.min}" max="${d.max}" step="${d.step}"
           value="${KQ_SETTINGS.get(d.key)}" />
         <span class="setting-val" id="sv-${d.key}">${Number(KQ_SETTINGS.get(d.key)).toFixed(d.step < 1 ? 1 : 0)}</span>
-      </div>
-    `).join('') + toggleDefs.map(t => `
+      </div>`;
+    const toggleRow = t => `
       <div class="setting-row">
         <label class="setting-label">${t.label}</label>
         <input type="checkbox" class="setting-check" data-key="${t.key}"
           ${KQ_SETTINGS.get(t.key) ? 'checked' : ''} />
-      </div>
-    `).join('');
+      </div>`;
+    const tintRow = t => `
+      <div class="setting-row">
+        <label class="setting-label">${t.label}</label>
+        <input type="color" data-tint-key="${t.key}"
+          value="${KQ_SETTINGS.get(t.key) || '#ffffff'}"
+          style="width:40px;height:32px;border:none;background:none;cursor:pointer;border-radius:6px"/>
+        <button data-tint-clear="${t.key}" style="padding:4px 10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#94a3b8;font-size:11px;cursor:pointer">✖ Clear</button>
+      </div>`;
+
+    container.innerHTML = authorRow
+      + `<div class="settings-group settings-easy">
+           <div class="settings-group-title">Easy</div>
+           ${easySliders.map(sliderRow).join('')}
+           ${easyToggles.map(toggleRow).join('')}
+         </div>`
+      + `<details class="settings-group settings-more">
+           <summary>More — Change How It Plays</summary>
+           ${moreSliders.map(sliderRow).join('')}
+           ${moreToggles.map(toggleRow).join('')}
+           <div class="settings-subtitle">🎨 Color Tints</div>
+           <div class="settings-subnote">Mix in a color on top of your characters! Clear for no tint.</div>
+           ${tintDefs.map(tintRow).join('')}
+         </details>`
+      + `<details class="settings-group settings-debug">
+           <summary>Debug — For Grown-Ups</summary>
+           ${debugToggles.map(toggleRow).join('')}
+         </details>`;
 
     const authorInput = container.querySelector('#sv-authorName');
     if (authorInput) {
@@ -2928,38 +2969,13 @@
       cb.addEventListener('change', () => KQ_SETTINGS.set(cb.dataset.key, cb.checked));
     });
 
-    // Color tint section
-    const tintDefs = [
-      { key: 'tintPlayer', label: '🦸 Hero Color' },
-      { key: 'tintWalker', label: '👾 Walker Enemy' },
-      { key: 'tintJumper', label: '🐸 Jumper Enemy' },
-      { key: 'tintFlyer',  label: '🦋 Flyer Enemy' },
-      { key: 'tintCoin',   label: '⭐ Coin Color' },
-    ];
-    const tintSection = document.createElement('div');
-    tintSection.innerHTML = `
-      <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)">
-        <div style="font-size:13px;font-weight:900;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">🎨 Color Tints</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:10px">Mix in a color on top of your characters! Leave blank for no tint.</div>
-        ${tintDefs.map(t => `
-          <div class="setting-row">
-            <label class="setting-label">${t.label}</label>
-            <input type="color" data-tint-key="${t.key}"
-              value="${KQ_SETTINGS.get(t.key) || '#ffffff'}"
-              style="width:40px;height:32px;border:none;background:none;cursor:pointer;border-radius:6px"/>
-            <button data-tint-clear="${t.key}" style="padding:4px 10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#94a3b8;font-size:11px;cursor:pointer">✖ Clear</button>
-          </div>
-        `).join('')}
-      </div>`;
-    container.appendChild(tintSection);
-
-    tintSection.querySelectorAll('[data-tint-key]').forEach(input => {
+    container.querySelectorAll('[data-tint-key]').forEach(input => {
       input.addEventListener('input', () => KQ_SETTINGS.set(input.dataset.tintKey, input.value));
     });
-    tintSection.querySelectorAll('[data-tint-clear]').forEach(btn => {
+    container.querySelectorAll('[data-tint-clear]').forEach(btn => {
       btn.addEventListener('click', () => {
         KQ_SETTINGS.set(btn.dataset.tintClear, '');
-        const inp = tintSection.querySelector(`[data-tint-key="${btn.dataset.tintClear}"]`);
+        const inp = container.querySelector(`[data-tint-key="${btn.dataset.tintClear}"]`);
         if (inp) inp.value = '#ffffff';
       });
     });

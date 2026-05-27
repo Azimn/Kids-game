@@ -660,6 +660,29 @@ canvas#game {
 .setting-check  { width: 22px; height: 22px; accent-color: #f59e0b; cursor: pointer; }
 .setting-val    { flex: 0 0 40px; font-size: 14px; color: #fbbf24; text-align: right; font-weight: 800; }
 
+/* Settings sections: Easy always shown; More/Debug collapse */
+.settings-group { margin-top: 14px; }
+.settings-group-title,
+.settings-group > summary {
+  font-size: 13px; font-weight: 900; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: 1px;
+  padding: 8px 0; margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.settings-group > summary { cursor: pointer; list-style: none; outline: none; }
+.settings-group > summary::-webkit-details-marker { display: none; }
+.settings-group > summary::after { content: ' +'; color: #f59e0b; }
+.settings-group[open] > summary::after { content: ' –'; }
+.settings-easy .settings-group-title { color: #fbbf24; }
+.settings-debug > summary { color: #64748b; }
+.settings-subtitle {
+  font-size: 12px; font-weight: 900; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-top: 14px; padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.settings-subnote { font-size: 11px; color: #64748b; margin: 4px 0 6px; }
+
 /* ══════════════════════════════════════════════════════════
    LEVEL EDITOR PANEL
 ══════════════════════════════════════════════════════════ */
