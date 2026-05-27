@@ -51,18 +51,6 @@ canvas#game {
     background: #000;
   }
 
-  /* Touch controls just below the canvas, not at screen-bottom */
-  #touchControls {
-    top: calc(100vw * 9 / 16 + 10px);
-    bottom: auto;
-  }
-
-  /* Slightly larger buttons — we have vertical room in portrait */
-  #touchControls button {
-    width: clamp(68px, 18vw, 92px);
-    height: clamp(68px, 18vw, 92px);
-    font-size: clamp(18px, 5.5vw, 28px);
-  }
 }
 
 #gameShell:fullscreen {
@@ -830,6 +818,20 @@ canvas#game {
   pointer-events: none;
 }
 @media (pointer: coarse) { #touchControls { display: flex; } }
+
+/* Portrait: controls sit just below the canvas, not at the screen bottom.
+   This rule must come AFTER the base #touchControls { bottom:... } above. */
+@media (orientation: portrait) and (pointer: coarse) {
+  #touchControls {
+    top: calc(100vw * 9 / 16 + 10px);
+    bottom: auto;
+  }
+  #touchControls button {
+    width: clamp(68px, 18vw, 92px);
+    height: clamp(68px, 18vw, 92px);
+    font-size: clamp(18px, 5.5vw, 28px);
+  }
+}
 
 @media (max-width: 740px), (max-height: 500px) {
   .big-menu { padding: 8px 14px 52px; justify-content: flex-start; gap: 8px; }
