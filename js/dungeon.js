@@ -293,8 +293,12 @@ window.KQ_RPG = (() => {
       rpg.dialogPage++;
       rpg._dialogCooldown = 0.18;
       if (rpg.dialogPage >= rpg.dialogLines.length) {
-        rpg.phase = 'dialog_done';
-        if (rpg.dialogCallback) rpg.dialogCallback();
+        if (rpg.dialogCallback) {
+          rpg.phase = 'dialog_done';
+          rpg.dialogCallback();
+        } else {
+          rpg.phase = rpg.player ? 'overworld' : 'classselect';
+        }
       }
       beep('menu');
     }

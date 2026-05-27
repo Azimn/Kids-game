@@ -129,6 +129,7 @@
 
   // ── Lap Detection ─────────────────────────────────────────────────────────
   function checkLap(kart) {
+    if (raceOver) return;
     const wp = nearestWaypoint(kart.x, kart.y);
     const prev = kart.prevWpIndex;
     // Crossed start/finish: waypoint jumps from high (>24) to low (<4)
@@ -140,6 +141,8 @@
         } else {
           window._KQ_BEEP && window._KQ_BEEP('coin');
         }
+      } else if (kart.lapCount >= TOTAL_LAPS) {
+        endRace(false);
       }
     }
     kart.prevWpIndex = wp;

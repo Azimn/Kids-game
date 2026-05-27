@@ -33,7 +33,7 @@
   let cameraX     = 0;
   let screenShake = 0;
   let lastTime    = performance.now();
-  let mode        = "menu";  // title | menu | playing | paused | editor | settings | gameover | win | levelselect
+  let mode        = "title";  // title | menu | playing | paused | editor | settings | gameover | win | levelselect
   let levelIndex  = 0;
   let playtestReturnMode = null;
   let frameworkInputLock = 0;
@@ -307,19 +307,8 @@
     if (mode === "title") {
       ensureAudio();
       beep('menu');
-      const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
-      if (gmode === 'shooter') {
-        _shooterInit();
-        mode = 'playing';
-      } else if (gmode === 'brawler') {
-        _brawlerInit();
-        mode = 'playing';
-      } else if (_isFrameworkMode(gmode)) {
-        _frameworkInit(gmode);
-        mode = 'playing';
-      } else {
-        mode = "levelselect";
-      }
+      mode = "menu";
+      _showMenuPanel();
       return;
     }
     if (mode === "menu") {
@@ -327,6 +316,22 @@
     }
     if (mode === "gameover" || mode === "win") {
       restartCurrentMode();
+    }
+  }
+  function _startSelectedGame() {
+    ensureAudio();
+    const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
+    if (gmode === 'shooter') {
+      _shooterInit();
+      mode = 'playing';
+    } else if (gmode === 'brawler') {
+      _brawlerInit();
+      mode = 'playing';
+    } else if (_isFrameworkMode(gmode)) {
+      _frameworkInit(gmode);
+      mode = 'playing';
+    } else {
+      mode = "levelselect";
     }
   }
   function restartCurrentMode() {
@@ -364,9 +369,11 @@
   function _frameworkInit(gmode) {
     const module = _getFrameworkModule(gmode);
     if (!module || typeof module.init !== 'function') {
-      alert('This game type is still loading. Try again in a second.');
+      _showNoticePanel('Almost Ready', [
+        'This game type is still loading.',
+        'Try again in a second.'
+      ]);
       mode = 'menu';
-      _showMenuPanel();
       return;
     }
     game.score = 0;
@@ -965,7 +972,7 @@
     if (!boss || !boss.alive) return;
     const ASSETS = window.KQ_ASSETS || {};
     const bx = boss.x - cameraX;
-    const bossArt = (ASSETS.enemies||{}).boss || (ASSETS.enemies||{}).walker;
+    const bossArt = _enemyArtFor('boss', ASSETS);
     if (!drawImg(bossArt, bx, boss.y, boss.w, boss.h)) {
       // Body
       ctx.fillStyle = '#dc2626';
@@ -1290,7 +1297,7 @@
       const tint = e.type === 'flyer' ? KQ_SETTINGS.get('tintFlyer') :
                    e.type === 'jumper' ? KQ_SETTINGS.get('tintJumper') :
                    KQ_SETTINGS.get('tintWalker');
-      const assetKey = (ASSETS.enemies||{})[e.type];
+      const assetKey = _enemyArtFor(e.type, ASSETS);
       drawWithTint(tint, e.x, e.y, e.w, e.h, () => {
         if (!drawImg(assetKey, e.x, e.y, e.w, e.h)) {
           const colors = { walker: '#fb923c', jumper: '#f97316', flyer: '#c084fc' };
@@ -1307,7 +1314,7 @@
     // Boss
     if (shooter.bossActive && shooter.bossHp > 0) {
       const bx = shooter.bossX, by = shooter.bossY;
-      const bossArt = (ASSETS.enemies||{}).boss || (ASSETS.enemies||{}).walker;
+      const bossArt = _enemyArtFor('boss', ASSETS);
       if (!drawImg(bossArt, bx, by, 100, 80)) {
         ctx.fillStyle = '#dc2626'; ctx.fillRect(bx, by, 100, 80);
         ctx.fillStyle = '#fff';
@@ -1728,11 +1735,12 @@
         ctx.globalAlpha = brawler.invTimer > 0 && Math.floor(game.time * 12) % 2 ? 0.4 : 1;
 
         const pTint = KQ_SETTINGS.get('tintPlayer');
-        let frame = (ASSETS.player||{}).idle;
-        if (brawler.punchTimer > 0) frame = (ASSETS.player||{}).hurt;
-        else if (!brawler.onGround) frame = (ASSETS.player||{}).jump;
+        const playerFrames = _playerArtFrames(ASSETS);
+        let frame = playerFrames.idle;
+        if (brawler.punchTimer > 0) frame = playerFrames.hurt;
+        else if (!brawler.onGround) frame = playerFrames.jump;
         else if (brawler.playerVx !== 0 || pressed('left') || pressed('right'))
-          frame = Math.floor(brawler.playerAnim * 8) % 2 === 0 ? (ASSETS.player||{}).run1 : (ASSETS.player||{}).run2;
+          frame = Math.floor(brawler.playerAnim * 8) % 2 === 0 ? playerFrames.run1 : playerFrames.run2;
 
         drawWithTint(pTint, px - pw/2, py - ph, pw, ph, () => {
           if (!drawImg(frame, px - pw/2, py - ph, pw, ph, { flip })) {
@@ -1765,7 +1773,7 @@
         ctx.beginPath(); ctx.ellipse(ex + e.w/2, e.y + e.h + 2, e.w/2, 6, 0, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = e.hurtTimer > 0 ? 0.5 : 1;
 
-        const assetKey = (ASSETS.enemies||{})[e.type];
+        const assetKey = _enemyArtFor(e.type, ASSETS);
         drawWithTint(tint, ex, ey - e.h/2, e.w, e.h, () => {
           if (!drawImg(assetKey, ex, ey - e.h/2, e.w, e.h, { flip: e.dir < 0 })) {
             ctx.fillStyle = colors[e.type] || '#fb923c';
@@ -1782,7 +1790,7 @@
         ctx.beginPath(); ctx.ellipse(bx + bw/2, by + bh + 2, bw/2, 8, 0, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1;
 
-        const bossArt = (ASSETS.enemies||{}).boss || (ASSETS.enemies||{}).walker;
+        const bossArt = _enemyArtFor('boss', ASSETS);
         if (!drawImg(bossArt, bx, by, bw, bh, { flip: brawler.bossDir < 0 })) {
           ctx.fillStyle = '#dc2626'; ctx.fillRect(bx, by, bw, bh);
           ctx.fillStyle = '#111';
@@ -1962,13 +1970,17 @@
 
   function drawEnemies() {
     const ASSETS = window.KQ_ASSETS || {};
+    const enemyAssets = ASSETS.enemies || {};
+    const walkerFrame = enemyAssets.walker;
+    const jumperFrame = _chooseArtPath(enemyAssets.jumper, 'enemy_jumper', walkerFrame, 'enemy_walker');
+    const flyerFrame = _chooseArtPath(enemyAssets.flyer, 'enemy_flyer', walkerFrame, 'enemy_walker');
     for (const e of enemies) {
       if (!e.alive) continue;
       const flip = e.vx > 0;
       if (e.type === 'jumper') {
         const tint = KQ_SETTINGS.get('tintJumper');
         drawWithTint(tint, e.x, e.y, e.w, e.h, () => {
-          if (!drawImg((ASSETS.enemies||{}).jumper, e.x, e.y, e.w, e.h, { flip })) {
+          if (!drawImg(jumperFrame, e.x, e.y, e.w, e.h, { flip })) {
             ctx.fillStyle = '#f97316'; ctx.fillRect(e.x, e.y, e.w, e.h);
             ctx.fillStyle = '#111827';
             ctx.fillRect(e.x + (flip ? 22 : 8), e.y + 10, 6, 6);
@@ -1977,7 +1989,7 @@
       } else if (e.type === 'flyer') {
         const tint = KQ_SETTINGS.get('tintFlyer');
         drawWithTint(tint, e.x, e.y, e.w, e.h, () => {
-          if (!drawImg((ASSETS.enemies||{}).flyer, e.x, e.y, e.w, e.h, { flip })) {
+          if (!drawImg(flyerFrame, e.x, e.y, e.w, e.h, { flip })) {
             ctx.fillStyle = '#c084fc'; ctx.fillRect(e.x, e.y, e.w, e.h);
             ctx.fillStyle = '#111827';
             ctx.fillRect(e.x + (flip ? 20 : 8), e.y + 8, 6, 6);
@@ -1990,7 +2002,7 @@
       } else {
         const tint = KQ_SETTINGS.get('tintWalker');
         drawWithTint(tint, e.x, e.y, e.w, e.h, () => {
-          if (!drawImg((ASSETS.enemies||{}).walker, e.x, e.y, e.w, e.h, { flip })) {
+          if (!drawImg(walkerFrame, e.x, e.y, e.w, e.h, { flip })) {
             ctx.fillStyle = "#fb923c"; ctx.fillRect(e.x, e.y, e.w, e.h);
             ctx.fillStyle = "#111827";
             ctx.fillRect(e.x + (flip ? 25 : 9), e.y + 10, 6, 6);
@@ -2000,13 +2012,55 @@
     }
   }
 
+  function _hasCustomArt(slotKey) {
+    return !!(window.KQ_ART && typeof KQ_ART.getDataURL === 'function' && KQ_ART.getDataURL(slotKey));
+  }
+
+  function _chooseArtPath(path, slotKey, fallbackPath, fallbackSlotKey) {
+    if (_hasCustomArt(slotKey)) return path;
+    if (fallbackPath && fallbackSlotKey && _hasCustomArt(fallbackSlotKey)) return fallbackPath;
+    return path;
+  }
+
+  function _enemyArtFor(type, ASSETS = window.KQ_ASSETS || {}) {
+    const enemyAssets = ASSETS.enemies || {};
+    const slotByType = {
+      walker: 'enemy_walker',
+      jumper: 'enemy_jumper',
+      flyer: 'enemy_flyer',
+      boss: 'enemy_boss'
+    };
+    return _chooseArtPath(enemyAssets[type], slotByType[type], enemyAssets.walker, type === 'walker' ? null : 'enemy_walker');
+  }
+
+  function _playerArtFrames(ASSETS = window.KQ_ASSETS || {}) {
+    const playerAssets = ASSETS.player || {};
+    const customIdle = _hasCustomArt('player_idle');
+    const customRun1 = _hasCustomArt('player_run_1');
+    const customJump = _hasCustomArt('player_jump');
+    const customRun2 = _hasCustomArt('player_run_2');
+    const customHurt = _hasCustomArt('player_hurt');
+    const easyHeroArt = customIdle || customRun1 || customJump;
+    const idle = playerAssets.idle;
+    const run1 = playerAssets.run1 || idle;
+    const jump = (customJump || !easyHeroArt) ? (playerAssets.jump || run1 || idle) : (run1 || idle);
+    return {
+      idle,
+      run1,
+      run2: customRun2 ? (playerAssets.run2 || run1) : run1,
+      jump,
+      hurt: customHurt ? (playerAssets.hurt || jump) : jump
+    };
+  }
+
   function drawPlayer() {
     const ASSETS = window.KQ_ASSETS || {};
-    let frame = (ASSETS.player||{}).idle;
-    if (player.hurtTimer > 0) frame = (ASSETS.player||{}).hurt;
-    else if (!player.onGround) frame = (ASSETS.player||{}).jump;
+    const playerFrames = _playerArtFrames(ASSETS);
+    let frame = playerFrames.idle;
+    if (player.hurtTimer > 0) frame = playerFrames.hurt;
+    else if (!player.onGround) frame = playerFrames.jump;
     else if (Math.abs(player.vx) > 35)
-      frame = Math.floor(player.anim * 10) % 2 === 0 ? (ASSETS.player||{}).run1 : (ASSETS.player||{}).run2;
+      frame = Math.floor(player.anim * 10) % 2 === 0 ? playerFrames.run1 : playerFrames.run2;
 
     if (player.invincible > 0 && Math.floor(game.time * 18) % 2 === 0) ctx.globalAlpha = 0.45;
     const flip = player.dir < 0;
@@ -2153,11 +2207,11 @@
       ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 30;
       ctx.fillStyle = '#fbbf24';
       ctx.font = '900 72px system-ui, sans-serif';
-      ctx.fillText('PLACEHOLDER', VIEW_W / 2, 200);
+      ctx.fillText('KIDS GAME', VIEW_W / 2, 200);
       ctx.font = '900 48px system-ui, sans-serif';
       ctx.fillStyle = '#fff';
       ctx.shadowColor = '#fff'; ctx.shadowBlur = 10;
-      ctx.fillText('GAME', VIEW_W / 2, 262);
+      ctx.fillText('MAKER', VIEW_W / 2, 262);
       ctx.shadowBlur = 0;
 
       // Small hint
@@ -2174,7 +2228,7 @@
       ctx.textAlign = 'right';
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
       ctx.font = 'bold 14px system-ui';
-      ctx.fillText('Made by ' + author + ' 🎮', VIEW_W - 16, VIEW_H - 14);
+      ctx.fillText('Made by ' + author, VIEW_W - 16, VIEW_H - 14);
       ctx.restore();
     }
 
@@ -2194,7 +2248,7 @@
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(255,255,255,0.3)';
     ctx.font = '12px system-ui';
-    ctx.fillText('© YOUR NAME HERE  •  MADE WITH PLACEHOLDER GAME', VIEW_W / 2, VIEW_H - 20);
+    ctx.fillText('MADE WITH KIDS GAME MAKER', VIEW_W / 2, VIEW_H - 20);
     ctx.restore();
   }
 
@@ -2506,7 +2560,7 @@
     drawHud();
 
     if (!imagesLoaded) {
-      drawOverlay("Kid Quest", "Loading art files…", "Almost ready");
+      drawOverlay("Kids Game Maker", "Loading art files…", "Almost ready");
     } else if (mode === "paused") {
       drawPauseMenu();
     } else if (mode === "gameover") {
@@ -2536,8 +2590,27 @@
   function _showEditorPanel()  { _hideAllPanels(); document.getElementById('editorPanel').style.display = 'flex'; }
   function _showArtPanel()     { _hideAllPanels(); document.getElementById('artPanel').style.display = 'flex'; }
   function _showHowToPanel()   { _hideAllPanels(); document.getElementById('howToPanel').style.display = 'flex'; }
+  function _showNoticePanel(title, lines, buttonText = 'OK') {
+    _hideAllPanels();
+    const panel = document.getElementById('noticePanel');
+    const titleEl = document.getElementById('notice-title');
+    const bodyEl = document.getElementById('notice-body');
+    const okBtn = document.getElementById('btn-notice-ok');
+    if (!panel || !titleEl || !bodyEl || !okBtn) {
+      alert([title].concat(Array.isArray(lines) ? lines : [lines]).join('\n\n'));
+      return;
+    }
+    titleEl.textContent = title;
+    okBtn.textContent = buttonText;
+    const safeLines = Array.isArray(lines) ? lines : [lines];
+    bodyEl.innerHTML = safeLines
+      .filter(Boolean)
+      .map(line => `<p>${String(line).replace(/[<>&]/g, ch => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[ch]))}</p>`)
+      .join('');
+    panel.style.display = 'flex';
+  }
   function _hideAllPanels() {
-    ['menuPanel','settingsPanel','editorPanel','artPanel','howToPanel'].forEach(id => {
+    ['menuPanel','settingsPanel','editorPanel','artPanel','howToPanel','noticePanel'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -2550,6 +2623,10 @@
 
     const howToBackBtn = document.getElementById('btn-howto-back');
     if (howToBackBtn) howToBackBtn.addEventListener('click', () => { beep('menu'); _showMenuPanel(); });
+
+    const noticeOkBtn = document.getElementById('btn-notice-ok');
+    if (noticeOkBtn) noticeOkBtn.addEventListener('click', () => { beep('menu'); _showMenuPanel(); });
+    window.KQ_NOTICE = _showNoticePanel;
 
     // Build art manager UI
     const artContainer = document.getElementById('art-slots-container');
@@ -2565,6 +2642,7 @@
       moreToolsBtn.addEventListener('click', () => {
         beep('menu');
         const isOpen = advancedDrawer.classList.toggle('open');
+        document.getElementById('menuPanel')?.classList.toggle('advanced-open', isOpen);
         moreToolsBtn.setAttribute('aria-expanded', String(isOpen));
       });
     }
@@ -2701,14 +2779,17 @@
     const playBtn = document.getElementById('btn-play');
     if (playBtn) playBtn.addEventListener('click', () => {
       ensureAudio(); beep('menu');
-      mode = 'title';
       _hideAllPanels();
+      _startSelectedGame();
     });
 
     const editorBtn = document.getElementById('btn-editor');
     if (editorBtn) editorBtn.addEventListener('click', () => {
       if ((KQ_SETTINGS.get('gameMode') || 'platformer') !== 'platformer') {
-        alert('Level editor is for Platformer games. Switch Game Type to Platformer in More Tools to build levels.');
+        _showNoticePanel('Build Levels', [
+          'The level editor is for Platformer games right now.',
+          'Open More Tools, choose Platformer, then come back to Build Levels.'
+        ]);
         return;
       }
       beep('menu'); mode = 'editor';
@@ -2731,6 +2812,26 @@
       beep('menu');
       _buildHowToPanel();
       _showHowToPanel();
+    });
+
+    const fullscreenBtn = document.getElementById('btn-fullscreen');
+    if (fullscreenBtn) fullscreenBtn.addEventListener('click', async () => {
+      beep('menu');
+      const shell = document.getElementById('gameShell');
+      try {
+        if (!document.fullscreenElement && shell && shell.requestFullscreen) {
+          await shell.requestFullscreen();
+          fullscreenBtn.textContent = 'Small Screen';
+        } else if (document.exitFullscreen) {
+          await document.exitFullscreen();
+          fullscreenBtn.textContent = 'Big Screen';
+        }
+      } catch (err) {
+        _showNoticePanel('Big Screen', ['Your browser did not allow fullscreen this time.']);
+      }
+    });
+    document.addEventListener('fullscreenchange', () => {
+      if (fullscreenBtn) fullscreenBtn.textContent = document.fullscreenElement ? 'Small Screen' : 'Big Screen';
     });
 
     const settingsBackBtn = document.getElementById('btn-settings-back');
@@ -2778,37 +2879,78 @@
           style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);color:#f1f5f9;font-size:14px"/>
       </div>`;
 
-    const defs = [
+    // Grouped so young kids see only the simple options first.
+    // "More" and "Debug" are collapsed by default.
+    const easySliders = [
+      { key: 'startLives',      label: 'Starting Lives',    min: 1,   max: 10,  step: 1   },
+      { key: 'sfxVolume',       label: 'Sound Volume',      min: 0,   max: 1.0, step: 0.1 },
+    ];
+    const easyToggles = [
+      { key: 'infiniteLives',  label: '∞ Never Run Out of Lives' },
+    ];
+    const moreSliders = [
       { key: 'gravityMult',     label: 'Gravity',           min: 0.2, max: 3.0, step: 0.1 },
       { key: 'speedMult',       label: 'Player Speed',      min: 0.3, max: 3.0, step: 0.1 },
       { key: 'jumpMult',        label: 'Jump Height',       min: 0.3, max: 3.0, step: 0.1 },
       { key: 'enemySpeedMult',  label: 'Enemy Speed',       min: 0.0, max: 3.0, step: 0.1 },
       { key: 'projectileSpeed', label: 'Projectile Speed',  min: 0.3, max: 3.0, step: 0.1 },
-      { key: 'startLives',      label: 'Starting Lives',    min: 1,   max: 10,  step: 1   },
-      { key: 'sfxVolume',       label: 'Sound Volume',      min: 0,   max: 1.0, step: 0.1 },
     ];
-    const toggleDefs = [
-      { key: 'infiniteLives',  label: '∞ Infinite Lives'   },
+    const moreToggles = [
       { key: 'invincibleMode', label: '🦸 God Mode (no damage)' },
       { key: 'alwaysBlaster',  label: '🔫 Start with Blaster' },
-      { key: 'showHitboxes',   label: '🟩 Show Hitboxes (debug)' },
+    ];
+    const debugToggles = [
+      { key: 'showHitboxes',   label: '🟩 Show Hitboxes' },
+    ];
+    const tintDefs = [
+      { key: 'tintPlayer', label: '🦸 Hero Color' },
+      { key: 'tintWalker', label: '👾 Walker Enemy' },
+      { key: 'tintJumper', label: '🐸 Jumper Enemy' },
+      { key: 'tintFlyer',  label: '🦋 Flyer Enemy' },
+      { key: 'tintCoin',   label: '⭐ Coin Color' },
     ];
 
-    container.innerHTML = authorRow + defs.map(d => `
+    const sliderRow = d => `
       <div class="setting-row">
         <label class="setting-label">${d.label}</label>
         <input type="range" class="setting-slider" data-key="${d.key}"
           min="${d.min}" max="${d.max}" step="${d.step}"
           value="${KQ_SETTINGS.get(d.key)}" />
         <span class="setting-val" id="sv-${d.key}">${Number(KQ_SETTINGS.get(d.key)).toFixed(d.step < 1 ? 1 : 0)}</span>
-      </div>
-    `).join('') + toggleDefs.map(t => `
+      </div>`;
+    const toggleRow = t => `
       <div class="setting-row">
         <label class="setting-label">${t.label}</label>
         <input type="checkbox" class="setting-check" data-key="${t.key}"
           ${KQ_SETTINGS.get(t.key) ? 'checked' : ''} />
-      </div>
-    `).join('');
+      </div>`;
+    const tintRow = t => `
+      <div class="setting-row">
+        <label class="setting-label">${t.label}</label>
+        <input type="color" data-tint-key="${t.key}"
+          value="${KQ_SETTINGS.get(t.key) || '#ffffff'}"
+          style="width:40px;height:32px;border:none;background:none;cursor:pointer;border-radius:6px"/>
+        <button data-tint-clear="${t.key}" style="padding:4px 10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#94a3b8;font-size:11px;cursor:pointer">✖ Clear</button>
+      </div>`;
+
+    container.innerHTML = authorRow
+      + `<div class="settings-group settings-easy">
+           <div class="settings-group-title">Easy</div>
+           ${easySliders.map(sliderRow).join('')}
+           ${easyToggles.map(toggleRow).join('')}
+         </div>`
+      + `<details class="settings-group settings-more">
+           <summary>More — Change How It Plays</summary>
+           ${moreSliders.map(sliderRow).join('')}
+           ${moreToggles.map(toggleRow).join('')}
+           <div class="settings-subtitle">🎨 Color Tints</div>
+           <div class="settings-subnote">Mix in a color on top of your characters! Clear for no tint.</div>
+           ${tintDefs.map(tintRow).join('')}
+         </details>`
+      + `<details class="settings-group settings-debug">
+           <summary>Debug — For Grown-Ups</summary>
+           ${debugToggles.map(toggleRow).join('')}
+         </details>`;
 
     const authorInput = container.querySelector('#sv-authorName');
     if (authorInput) {
@@ -2827,38 +2969,13 @@
       cb.addEventListener('change', () => KQ_SETTINGS.set(cb.dataset.key, cb.checked));
     });
 
-    // Color tint section
-    const tintDefs = [
-      { key: 'tintPlayer', label: '🦸 Hero Color' },
-      { key: 'tintWalker', label: '👾 Walker Enemy' },
-      { key: 'tintJumper', label: '🐸 Jumper Enemy' },
-      { key: 'tintFlyer',  label: '🦋 Flyer Enemy' },
-      { key: 'tintCoin',   label: '⭐ Coin Color' },
-    ];
-    const tintSection = document.createElement('div');
-    tintSection.innerHTML = `
-      <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)">
-        <div style="font-size:13px;font-weight:900;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">🎨 Color Tints</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:10px">Mix in a color on top of your characters! Leave blank for no tint.</div>
-        ${tintDefs.map(t => `
-          <div class="setting-row">
-            <label class="setting-label">${t.label}</label>
-            <input type="color" data-tint-key="${t.key}"
-              value="${KQ_SETTINGS.get(t.key) || '#ffffff'}"
-              style="width:40px;height:32px;border:none;background:none;cursor:pointer;border-radius:6px"/>
-            <button data-tint-clear="${t.key}" style="padding:4px 10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#94a3b8;font-size:11px;cursor:pointer">✖ Clear</button>
-          </div>
-        `).join('')}
-      </div>`;
-    container.appendChild(tintSection);
-
-    tintSection.querySelectorAll('[data-tint-key]').forEach(input => {
+    container.querySelectorAll('[data-tint-key]').forEach(input => {
       input.addEventListener('input', () => KQ_SETTINGS.set(input.dataset.tintKey, input.value));
     });
-    tintSection.querySelectorAll('[data-tint-clear]').forEach(btn => {
+    container.querySelectorAll('[data-tint-clear]').forEach(btn => {
       btn.addEventListener('click', () => {
         KQ_SETTINGS.set(btn.dataset.tintClear, '');
-        const inp = tintSection.querySelector(`[data-tint-key="${btn.dataset.tintClear}"]`);
+        const inp = container.querySelector(`[data-tint-key="${btn.dataset.tintClear}"]`);
         if (inp) inp.value = '#ffffff';
       });
     });
@@ -2903,17 +3020,16 @@
       URL.revokeObjectURL(a.href);
 
       const artCount = Object.keys(artOverrides).length;
-      alert(
-        'Game exported!\n\n' +
-        (artCount > 0
-          ? `🎨 Your pictures are included! Your friend will see YOUR drawings, not colored boxes.\n(${artCount} custom picture${artCount !== 1 ? 's' : ''} baked in)\n\n`
-          : '') +
-        (authorName ? `Made by: ${authorName}\n\n` : '') +
-        'Just send the .html file - your friend opens it in any browser!\n' +
-        'No extra files needed.'
-      );
+      const lines = [];
+      if (artCount > 0) lines.push(`Your pictures are included (${artCount} custom picture${artCount !== 1 ? 's' : ''}).`);
+      if (authorName) lines.push(`Made by: ${authorName}`);
+      lines.push('Send the downloaded HTML file to a friend.');
+      lines.push('They can open it in any browser. No extra files needed.');
+      _showNoticePanel('Game Exported!', lines, 'Nice');
     } catch (err) {
-      alert('Export failed: ' + err.message);
+      _showNoticePanel('Export Failed', [
+        err && err.message ? err.message : 'Something went wrong while making the HTML file.'
+      ]);
     }
   }
 
@@ -2932,6 +3048,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"/>
   <title>${title}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230f172a'/%3E%3Cpath d='M14 38h10v10h16V38h10V22H40V12H24v10H14z' fill='%23fbbf24'/%3E%3C/svg%3E"/>
   <style>${files['style.css']}</style>
 </head>
 <body>
@@ -2955,6 +3072,7 @@
         </div>
         <div class="advanced-row">
           <button class="small-btn" id="btn-howtoplay">How to Play</button>
+          <button class="small-btn" id="btn-fullscreen">Big Screen</button>
           <button class="small-btn" id="btn-settings">Settings</button>
         </div>
         <!-- Hidden stubs so game.js event wiring doesn't crash -->
@@ -2982,6 +3100,13 @@
           <p class="panel-hint" id="howto-hint">Quick controls for this game type.</p>
         </div>
         <div class="howto-body" id="howto-body"></div>
+      </div>
+    </section>
+    <section id="noticePanel" class="overlay-panel" style="display:none">
+      <div class="notice-card">
+        <h2 class="notice-title" id="notice-title">Message</h2>
+        <div class="notice-body" id="notice-body"></div>
+        <button class="notice-btn" id="btn-notice-ok">OK</button>
       </div>
     </section>
     <section id="editorPanel" class="overlay-panel" style="display:none">
@@ -3038,12 +3163,8 @@ window.KQ_EXPORT_CONFIG = {
     }
 
     _initMenuEvents();
-    if (window.KQ_EXPORT_CONFIG) {
-      mode = 'title';
-      _hideAllPanels();
-    } else {
-      _showMenuPanel();
-    }
+    mode = 'title';
+    _hideAllPanels();
 
     // Set up a blank level so the canvas has something to draw on startup
     levelIndex = 0;

@@ -40,7 +40,7 @@ const KQ_ART = (() => {
       key: 'player_run_2',
       label: 'Hero Walk 2',
       sublabel: 'Second walking picture',
-      emoji: 'Jump',
+      emoji: '2',
       color: '#1d4ed8',
       paths: ['assets/art/player-run-2.png'],
       fallbackKey: 'player_run',
@@ -344,10 +344,15 @@ const KQ_ART = (() => {
     container.innerHTML = '';
 
     const platformerGroups = [
-      { label: 'Your Hero', keys: ['player_idle','player_run_1','player_run_2','player_jump','player_hurt'] },
-      { label: 'Platformer World', keys: ['tile_ground','tile_question','tile_brick','tile_break','tile_spike','tile_goal'] },
-      { label: 'Platformer Bad Guys', keys: ['enemy_walker','enemy_jumper','enemy_flyer'] },
-      { label: 'Coins & Power-ups', keys: ['coin','power_blaster','power_shield','power_jump','power_dash','power_giant'] },
+      { label: 'Start Here', keys: ['player_idle','player_run_1','player_jump','enemy_walker','coin','tile_goal'] },
+    ];
+
+    const platformerMoreGroups = [
+      {
+        label: 'More Platformer Pictures',
+        keys: ['player_run_2','player_hurt','tile_ground','tile_question','tile_brick','tile_break','tile_spike','enemy_jumper','enemy_flyer','power_blaster','power_shield','power_jump','power_dash','power_giant'],
+        note: 'Use these after the simple pictures feel easy.'
+      }
     ];
 
     const moreGroups = [
@@ -385,15 +390,26 @@ const KQ_ART = (() => {
 
     const starter = document.createElement('section');
     starter.className = 'art-section art-section-primary';
-    starter.innerHTML = '<div class="art-section-title">Platformer Starter Art</div>';
+    starter.innerHTML = `
+      <div class="art-section-title">Easy Platformer Art</div>
+      <div class="art-kid-note">Pick pictures for these first. That is enough to make the Platformer feel like your own game.</div>
+    `;
     for (const group of platformerGroups) {
       starter.appendChild(_makeGroup(group));
     }
     container.appendChild(starter);
 
+    const platformerMore = document.createElement('details');
+    platformerMore.className = 'art-more art-more-platformer';
+    platformerMore.innerHTML = '<summary>More Platformer Pictures</summary>';
+    for (const group of platformerMoreGroups) {
+      platformerMore.appendChild(_makeGroup(group));
+    }
+    container.appendChild(platformerMore);
+
     const more = document.createElement('details');
     more.className = 'art-more';
-    more.innerHTML = '<summary>More Assets for All Games</summary>';
+    more.innerHTML = '<summary>Advanced: Other Game Types</summary>';
     for (const group of moreGroups) {
       more.appendChild(_makeGroup(group));
     }
@@ -484,7 +500,13 @@ const KQ_ART = (() => {
           fileInput.value = '';
         },
         (err) => {
-          alert('Oops! ' + err);
+          if (window.KQ_NOTICE) {
+            window.KQ_NOTICE('Picture Did Not Load', [
+              err && err.message ? err.message : String(err)
+            ]);
+          } else {
+            alert('Oops! ' + err);
+          }
           btn.textContent = 'Pick a Picture';
           btn.disabled = false;
           fileInput.value = '';
@@ -509,7 +531,7 @@ const KQ_ART = (() => {
   function _refreshCard(card, slot, dataURL) {
     const preview = card.querySelector('.art-preview');
     if (dataURL) {
-      preview.innerHTML = `<img src="${dataURL}" alt="${slot.label}" class="art-thumb"/><div class="art-badge">✅</div>`;
+      preview.innerHTML = `<img src="${dataURL}" alt="${slot.label}" class="art-thumb"/><div class="art-badge">OK</div>`;
       // Add/update clear button
       let clearBtn = card.querySelector('.art-clear-btn');
       if (!clearBtn) {

@@ -1,4 +1,4 @@
-# Placeholder Game — Kids Platformer Kit
+# Kids Game Maker
 
 A classic-style platformer you can make your own by swapping out the artwork.
 Inspired by Super Mario Bros, Mega Man, Castlevania, and Ninja Gaiden.

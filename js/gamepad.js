@@ -87,19 +87,16 @@ const KQ_GAMEPAD = (() => {
   }
 
   // Show a small "gamepad connected" toast when a controller is plugged in
-  window.addEventListener('gamepadconnected', (e) => {
-    console.log('[KidGame] Gamepad connected:', e.gamepad.id);
+  window.addEventListener('gamepadconnected', () => {
     const toast = document.getElementById('gpToast');
     if (toast) {
-      toast.textContent = '🎮 Controller connected!';
+      toast.textContent = 'Controller connected!';
       toast.style.opacity = '1';
       setTimeout(() => { toast.style.opacity = '0'; }, 2500);
     }
   });
 
-  window.addEventListener('gamepaddisconnected', (e) => {
-    console.log('[KidGame] Gamepad disconnected:', e.gamepad.id);
-  });
+  window.addEventListener('gamepaddisconnected', () => {});
 
   return { init, poll };
 })();
