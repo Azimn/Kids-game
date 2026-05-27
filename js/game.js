@@ -2675,6 +2675,94 @@
       .join('');
     panel.style.display = 'flex';
   }
+  function _showGenreConfigPanel(gameMode) {
+    _hideAllPanels();
+    const panel = document.getElementById('noticePanel');
+    const titleEl = document.getElementById('notice-title');
+    const bodyEl = document.getElementById('notice-body');
+    const okBtn = document.getElementById('btn-notice-ok');
+    if (!panel || !titleEl || !bodyEl || !okBtn) return;
+
+    const configs = {
+      shooter: {
+        title: 'Customize Space Shooter',
+        fields: [
+          { key: 'shooterWaves', label: 'Number of Waves', type: 'range', min: 1, max: 10, def: 3 },
+          { key: 'shooterEnemiesPerWave', label: 'Enemies Per Wave', type: 'range', min: 1, max: 8, def: 4 },
+          { key: 'shooterBossHealth', label: 'Boss Health (stars)', type: 'range', min: 1, max: 5, def: 3 },
+        ]
+      },
+      brawler: {
+        title: 'Customize Beat-em-up',
+        fields: [
+          { key: 'shooterWaves', label: 'Number of Waves', type: 'range', min: 1, max: 10, def: 3 },
+          { key: 'shooterEnemiesPerWave', label: 'Enemies Per Wave', type: 'range', min: 1, max: 8, def: 4 },
+          { key: 'shooterBossHealth', label: 'Boss Health (stars)', type: 'range', min: 1, max: 5, def: 3 },
+        ]
+      },
+      dungeon: {
+        title: 'Customize Dungeon Adventure',
+        fields: [
+          { key: 'dungeonFloors', label: 'Dungeon Floors', type: 'range', min: 1, max: 5, def: 3 },
+          { key: 'dungeonDifficulty', label: 'Enemy Difficulty', type: 'range', min: 1, max: 5, def: 2 },
+          { key: 'dungeonStartClass', label: 'Starting Class', type: 'select', options: ['Warrior', 'Wizard', 'Rogue'], def: 'Warrior' },
+        ]
+      },
+      racer: {
+        title: 'Customize Kart Racer',
+        fields: [
+          { key: 'kartLaps', label: 'Number of Laps', type: 'range', min: 1, max: 5, def: 3 },
+          { key: 'kartRivalSpeed', label: 'Rival Speed', type: 'range', min: 1, max: 5, def: 3 },
+          { key: 'kartBoostPads', label: 'Include Boost Pads', type: 'toggle', def: true },
+        ]
+      },
+      puzzle: {
+        title: 'Customize Puzzle Room',
+        fields: [
+          { key: 'puzzleRoomSize', label: 'Room Size (1=Small 3=Large)', type: 'range', min: 1, max: 3, def: 2 },
+          { key: 'puzzleRooms', label: 'Number of Rooms', type: 'range', min: 1, max: 5, def: 3 },
+        ]
+      }
+    };
+
+    const cfg = configs[gameMode];
+    if (!cfg) return;
+
+    titleEl.textContent = cfg.title;
+    okBtn.textContent = 'Done';
+
+    const rows = cfg.fields.map(f => {
+      const val = KQ_SETTINGS.get(f.key) !== undefined ? KQ_SETTINGS.get(f.key) : f.def;
+      if (f.type === 'range') {
+        return `<div class="setting-row" style="margin:8px 0">
+          <label class="setting-label">${f.label}: <strong id="gcv-${f.key}">${val}</strong></label>
+          <input type="range" min="${f.min}" max="${f.max}" value="${val}"
+            style="width:100%" data-gckey="${f.key}"
+            oninput="document.getElementById('gcv-'+this.dataset.gckey).textContent=this.value; window.KQ_SETTINGS && KQ_SETTINGS.set(this.dataset.gckey, +this.value)">
+        </div>`;
+      } else if (f.type === 'select') {
+        const opts = f.options.map(o => `<option value="${o}"${o===val?' selected':''}>${o}</option>`).join('');
+        return `<div class="setting-row" style="margin:8px 0">
+          <label class="setting-label">${f.label}</label>
+          <select style="margin-left:8px" data-gckey="${f.key}"
+            onchange="window.KQ_SETTINGS && KQ_SETTINGS.set(this.dataset.gckey, this.value)">${opts}</select>
+        </div>`;
+      } else if (f.type === 'toggle') {
+        const checked = val ? 'checked' : '';
+        return `<div class="setting-row" style="margin:8px 0">
+          <label class="setting-label">${f.label}
+            <input type="checkbox" ${checked} data-gckey="${f.key}" style="margin-left:8px"
+              onchange="window.KQ_SETTINGS && KQ_SETTINGS.set(this.dataset.gckey, this.checked)">
+          </label>
+        </div>`;
+      }
+      return '';
+    }).join('');
+
+    bodyEl.innerHTML = rows;
+    panel.style.display = 'flex';
+  }
+
   function _hideAllPanels() {
     ['menuPanel','settingsPanel','editorPanel','artPanel','howToPanel','noticePanel'].forEach(id => {
       const el = document.getElementById(id);
@@ -2735,7 +2823,8 @@
           'Move: Arrow Keys or WASD',
           'Shoot: Space, Enter, or X',
           'Goal: survive waves and defeat the boss',
-          'Tip: your Hero art becomes the ship'
+          'Tip: your Hero art becomes the ship',
+          'Create: use the Create button to customize waves and difficulty'
         ]
       },
       brawler: {
@@ -2745,7 +2834,8 @@
           'Move: Arrow Keys or WASD',
           'Punch: X or B button',
           'Jump: Space',
-          'Goal: beat the boss at the end'
+          'Goal: beat the boss at the end',
+          'Create: use the Create button to customize waves and boss health'
         ]
       },
       dungeon: {
@@ -2756,7 +2846,8 @@
           'Move: Arrow Keys or WASD',
           'Battle menu: Up / Down',
           'Choose action: Space, Enter, or X',
-          'Goal: defeat all guardians and reach the stairs'
+          'Goal: defeat all guardians and reach the stairs',
+          'Create: use the Create button to choose floors and starting class'
         ]
       },
       racer: {
@@ -2766,7 +2857,8 @@
           'Steer: Left / Right',
           'Gas: Up or A button',
           'Use item: X, B, or Dash',
-          'Goal: finish 3 laps'
+          'Goal: finish 3 laps',
+          'Create: use the Create button to adjust laps and rival speed'
         ]
       },
       puzzle: {
@@ -2776,7 +2868,8 @@
           'Move: Arrow Keys or WASD',
           'Sword: Space, Enter, or X',
           'Push blocks by walking into them',
-          'Goal: find the key and escape'
+          'Goal: find the key and escape',
+          'Create: use the Create button to set room size and number of rooms'
         ]
       }
     };
@@ -2824,14 +2917,13 @@
       if (text) text.textContent = info.blurb;
       const playSub = document.querySelector('#btn-play .kid-btn-sub');
       if (playSub) playSub.textContent = `Start ${info.label}`;
-      // Show/hide editor button based on genre (no editor for shooter)
+      // Editor button — works for all genres (platformer builds levels, others show config)
       const edBtn = document.getElementById('btn-editor');
       if (edBtn) {
-        const disabled = cur !== 'platformer';
-        edBtn.disabled = disabled;
-        edBtn.classList.toggle('is-disabled', disabled);
+        edBtn.disabled = false;
+        edBtn.classList.remove('is-disabled');
         const sub = edBtn.querySelector('.kid-btn-sub');
-        if (sub) sub.textContent = disabled ? 'Only for Platformer' : 'Build your world';
+        if (sub) sub.textContent = cur === 'platformer' ? 'Build your world' : 'Customize your game';
       }
     }
     document.querySelectorAll('.genre-btn').forEach(b => {
@@ -2853,16 +2945,15 @@
 
     const editorBtn = document.getElementById('btn-editor');
     if (editorBtn) editorBtn.addEventListener('click', () => {
-      if ((KQ_SETTINGS.get('gameMode') || 'platformer') !== 'platformer') {
-        _showNoticePanel('Build Levels', [
-          'The level editor is for Platformer games right now.',
-          'Open More Tools, choose Platformer, then come back to Build Levels.'
-        ]);
-        return;
+      beep('menu');
+      const gm = KQ_SETTINGS.get('gameMode') || 'platformer';
+      if (gm === 'platformer') {
+        mode = 'editor';
+        KQ_EDITOR.show();
+        _showEditorPanel();
+      } else {
+        _showGenreConfigPanel(gm);
       }
-      beep('menu'); mode = 'editor';
-      KQ_EDITOR.show();
-      _showEditorPanel();
     });
 
     const settingsBtn = document.getElementById('btn-settings');
