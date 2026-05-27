@@ -557,7 +557,11 @@
     if (window._KQ_HINT) window._KQ_HINT.draw();
 
     if (showResult) {
-      _kartOverlay(resultTitle, resultSub);
+      if (resultTitle === 'You Win!' && window._KQ_DRAW_CREDITS) {
+        window._KQ_DRAW_CREDITS(window._KQ_CTX);
+      } else {
+        _kartOverlay(resultTitle, resultSub);
+      }
     }
   }
 

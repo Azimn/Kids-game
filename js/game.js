@@ -1380,7 +1380,7 @@
 
     // Gameover / win overlay
     if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${shooter.score}`, 'Press Enter or Tap to Try Again');
-    if (mode === 'win') drawOverlay('You Win! 🎉', `Score: ${shooter.score}`, 'Press Enter or Tap to Play Again');
+    if (mode === 'win') _drawCredits(ctx);
   }
 
   function _shooterFirePlayer() {
@@ -1831,7 +1831,7 @@
     ctx.fillText(`Wave ${Math.min(brawler.wave+1, BRAWLER_TOTAL_WAVES+1)} / ${BRAWLER_TOTAL_WAVES+1}`, VIEW_W - 16, 28);
 
     if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${brawler.score}`, 'Press Enter or Tap to Try Again');
-    if (mode === 'win')      drawOverlay('You Win! 🎉', `Score: ${brawler.score}`, 'Press Enter or Tap to Play Again');
+    if (mode === 'win')      _drawCredits(ctx);
   }
   function drawBackground() {
     const ASSETS = window.KQ_ASSETS || {};
@@ -2306,6 +2306,68 @@
     };
   }
 
+  // ── Credits / win screen ─────────────────────────────────
+  let _creditsFrame = 0;
+  let _creditsStars = null;
+  function _initCreditsStars() {
+    _creditsStars = [];
+    for (let i = 0; i < 20; i++) {
+      _creditsStars.push({
+        x: Math.random() * VIEW_W,
+        y: Math.random() * VIEW_H,
+        offset: Math.random() * Math.PI * 2
+      });
+    }
+  }
+  function _drawCredits(c) {
+    if (!_creditsStars) _initCreditsStars();
+    _creditsFrame++;
+    c = c || ctx;
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    // Dark background
+    c.fillStyle = '#050d1a';
+    c.fillRect(0, 0, VIEW_W, VIEW_H);
+    // Twinkling stars
+    _creditsStars.forEach((s, i) => {
+      const alpha = 0.4 + 0.6 * Math.abs(Math.sin(_creditsFrame / 20 + s.offset));
+      c.globalAlpha = alpha;
+      c.fillStyle = '#fbbf24';
+      c.beginPath();
+      c.arc(s.x, s.y, 2, 0, Math.PI * 2);
+      c.fill();
+    });
+    c.globalAlpha = 1;
+    // Card
+    c.fillStyle = 'rgba(15,23,42,0.92)';
+    _roundRect(150, 100, 660, 340, 28); c.fill();
+    c.strokeStyle = 'rgba(251,191,36,0.5)'; c.lineWidth = 2; c.stroke();
+    // "You Win!" title
+    c.fillStyle = '#fbbf24';
+    c.font = '900 64px system-ui, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'alphabetic';
+    c.fillText('🎉 You Win! 🎉', VIEW_W / 2, 200);
+    // Author name
+    const authorName = (window.KQ_SETTINGS && KQ_SETTINGS.get('authorName')) || '';
+    if (authorName) {
+      c.fillStyle = '#e2e8f0';
+      c.font = 'bold 24px system-ui, sans-serif';
+      c.fillText('A game by ' + authorName, VIEW_W / 2, 252);
+    }
+    // Kids Game Maker
+    c.fillStyle = '#64748b';
+    c.font = '16px system-ui, sans-serif';
+    c.fillText('Kids Game Maker', VIEW_W / 2, 360);
+    // Play again instruction
+    c.fillStyle = '#fbbf24';
+    c.font = 'bold 22px system-ui, sans-serif';
+    c.fillText('Press Enter / Space to play again', VIEW_W / 2, 402);
+    c.restore();
+  }
+  // Expose on window for genre modules
+  window._KQ_DRAW_CREDITS = _drawCredits;
+
   function drawOverlay(title, subtitle, button) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "rgba(2,6,23,.64)"; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -2568,11 +2630,15 @@
     } else if (mode === "win") {
       const LEVELS = window.KQ_LEVELS || [];
       const isLast = levelIndex >= LEVELS.length - 1 && playtestReturnMode !== 'editor';
-      drawOverlay(
-        isLast ? "You Win!" : "Level Clear!",
-        `Score: ${game.score} · Coins: ${game.coins}`,
-        isLast ? "Press R / Enter to Play Again" : "Next level loading…"
-      );
+      if (isLast) {
+        _drawCredits(ctx);
+      } else {
+        drawOverlay(
+          "Level Clear!",
+          `Score: ${game.score} · Coins: ${game.coins}`,
+          "Next level loading…"
+        );
+      }
     }
     drawHintPopup();
   }
