@@ -14,6 +14,7 @@
   const COYOTE_TIME     = 0.11;
   const JUMP_BUFFER     = 0.13;
   const TILE            = 48;
+  const ZOOM = 1.35; // Makes tiles/player ~35% larger — closer to Mario scale
 
   function G_GRAV()   { return BASE_GRAVITY    * KQ_SETTINGS.get('gravityMult'); }
   function G_SPEED()  { return BASE_MOVE_SPEED * KQ_SETTINGS.get('speedMult'); }
@@ -31,6 +32,7 @@
   // ── Game state ─────────────────────────────────────────────
   let audioCtx    = null;
   let cameraX     = 0;
+  let cameraY     = 0;
   let screenShake = 0;
   let lastTime    = performance.now();
   let mode        = "title";  // title | menu | playing | paused | editor | settings | gameover | win | levelselect
@@ -400,7 +402,15 @@
 
     map     = currentLevel.map.map(row => row.split(""));
     coins   = currentLevel.coins.map(c => ({ ...c, w: 26, h: 26, taken: false, bob: Math.random() * 6 }));
-    powerups= currentLevel.powerups.map(p => ({ ...p, w: 32, h: 32, taken: false, bob: Math.random() * 6 }));
+    powerups = currentLevel.powerups.map(p => {
+      const ptx = Math.floor(p.x / TILE);
+      const pty = Math.floor(p.y / TILE);
+      const tileChar = (currentLevel.map[pty] || '')[ptx] || '.';
+      const insideBlock = tileChar === '?' || tileChar === 'B';
+      return { ...p, w: 32, h: 32, taken: false,
+        active: !insideBlock, // hidden if inside a block
+        bob: Math.random() * 6, vy: 0, vx: 0 };
+    });
 
     enemies = currentLevel.enemies.map(e => {
       if (e.type === 'jumper') {
@@ -410,8 +420,8 @@
         return { ...e, w: 36, h: 32, vx: -G_ENEMY(), vy: 0, alive: true,
           startX: e.x, startY: e.y, y: e.y, hurt: 0 };
       } else {
-        return { ...e, w: 40, h: 34, vx: -G_ENEMY(), alive: true,
-          startX: e.x, y: e.y - 34, hurt: 0 };
+        return { ...e, w: 40, h: 34, vx: -G_ENEMY(), vy: 0, alive: true,
+          startX: e.x, y: e.y - 34, hurt: 0, onGround: false };
       }
     });
 
@@ -524,6 +534,16 @@
       spawnPopup(tx * TILE + 10, ty * TILE - 10, "+100");
       spawnParticles(tx * TILE + TILE/2, ty * TILE + TILE/2, "#fbbf24", 10);
       beep("coin");
+      // Spawn associated powerup
+      const pw = powerups.find(pw => !pw.active && !pw.taken &&
+        Math.floor(pw.x / TILE) === tx && Math.floor(pw.y / TILE) === ty);
+      if (pw) {
+        pw.active = true;
+        pw.x = tx * TILE + TILE / 2 - pw.w / 2;
+        pw.y = ty * TILE - pw.h - 2;
+        pw.vy = -260;
+        pw.vx = 55;
+      }
       // Bounce animation
       const key = tx + ',' + ty;
       blockAnims.set(key, { timer: 0.3, maxTimer: 0.3 });
@@ -743,7 +763,23 @@
       }
     }
     for (const p of powerups) {
-      if (!p.taken && rectsOverlap(player, p)) collectPowerup(p);
+      if (p.taken || !p.active) continue;
+      // Physics for emerged powerups
+      if (p.vy !== 0 || p.vx !== 0) {
+        p.vy += G_GRAV() * dt;
+        p.y += p.vy * dt;
+        p.x += p.vx * dt;
+        // Floor/wall tile collision
+        const pty = Math.floor((p.y + p.h) / TILE);
+        const ptx = Math.floor((p.x + p.w / 2) / TILE);
+        if (isSolid(tileAt(ptx, pty))) { p.y = pty * TILE - p.h; p.vy = 0; }
+        const wallTx = Math.floor((p.x + (p.vx > 0 ? p.w : 0)) / TILE);
+        if (isSolid(tileAt(wallTx, Math.floor((p.y + p.h/2) / TILE)))) { p.vx *= -1; }
+        // Clamp to world
+        if (p.x < 0) { p.x = 0; p.vx = Math.abs(p.vx); }
+        if (p.x + p.w > game.worldWidth) { p.x = game.worldWidth - p.w; p.vx = -Math.abs(p.vx); }
+      }
+      if (rectsOverlap(player, p)) collectPowerup(p);
     }
     for (const e of enemies) {
       if (!e.alive || e.hurt > 0 || !rectsOverlap(player, e)) continue;
@@ -823,9 +859,33 @@
         // Gentle bob
         e.y = e.startY + Math.sin(game.time * 2.5 + e.startX * 0.01) * 8;
       } else {
-        // walker
+        // walker — apply gravity so they land on the ground/platforms
+        e.vy = (e.vy || 0) + G_GRAV() * dt;
+        e.y += e.vy * dt;
+        // Tile ground collision
+        {
+          const ty = Math.floor((e.y + e.h) / TILE);
+          const tx = Math.floor((e.x + e.w / 2) / TILE);
+          if (isSolid(tileAt(tx, ty))) {
+            e.y = ty * TILE - e.h;
+            e.vy = 0;
+            e.onGround = true;
+          } else {
+            e.onGround = false;
+          }
+        }
+        // Moving platform support
+        for (const mp of movingPlatforms) {
+          const bottom = e.y + e.h;
+          if (bottom >= mp.y - 4 && bottom <= mp.y + 8 &&
+              e.x + e.w > mp.x && e.x < mp.x + mp.w && e.vy >= 0) {
+            e.y = mp.y - e.h; e.vy = 0; e.onGround = true;
+          }
+        }
+        // Horizontal patrol
         e.x += e.vx * dt;
         if (Math.abs(e.x - e.startX) > e.patrol) e.vx *= -1;
+        // Turn at walls and ledge edges
         const fX = e.vx > 0 ? e.x + e.w + 4 : e.x - 4;
         const head = worldToTile(fX, e.y + 8);
         const foot = worldToTile(fX, e.y + e.h + 8);
@@ -1036,8 +1096,12 @@
   }
 
   function updateCamera(dt) {
-    const target = Math.max(0, Math.min(game.worldWidth - VIEW_W, player.x - VIEW_W * 0.42));
-    cameraX += (target - cameraX) * Math.min(1, dt * 7.5);
+    const visW = VIEW_W / ZOOM;
+    const visH = VIEW_H / ZOOM;
+    const targetX = Math.max(0, Math.min(game.worldWidth - visW, player.x - visW * 0.35));
+    cameraX += (targetX - cameraX) * Math.min(1, dt * 7.5);
+    // Fixed Y: always show the full ground row + ~24px of void below
+    cameraY = Math.max(0, game.worldHeight + 24 - visH);
   }
 
   // ── Space Shooter genre ────────────────────────────────────
@@ -1918,6 +1982,9 @@
 
   function drawWorld() {
     if (!currentLevel) return;
+    // Dark brown band from row 9 downward — shows through tile gaps (holes/pits)
+    ctx.fillStyle = '#2a0e04';
+    ctx.fillRect(0, 9 * TILE, game.worldWidth, game.worldHeight - 9 * TILE + 200);
     const startCol = Math.max(0, Math.floor(cameraX / TILE) - 1);
     const endCol   = Math.min((map[0]||[]).length - 1, Math.ceil((cameraX + VIEW_W) / TILE) + 1);
     for (let ty = 0; ty < map.length; ty++)
@@ -1967,7 +2034,7 @@
       }
     }
     for (const p of powerups) {
-      if (p.taken) continue;
+      if (!p.active || p.taken) continue;
       const bob = Math.sin(game.time * 3 + p.bob) * 6;
       const path = (ASSETS.items||{})[p.type];
       if (!drawImg(path, p.x, p.y + bob, p.w, p.h)) {
@@ -2623,7 +2690,9 @@
     drawBackground();
     drawParallax();
     ctx.save();
-    ctx.translate(Math.round(-cameraX + shakeX), Math.round(shakeY));
+    ctx.translate(Math.round(shakeX), Math.round(shakeY)); // screen-space shake
+    ctx.scale(ZOOM, ZOOM);
+    ctx.translate(Math.round(-cameraX), Math.round(-cameraY)); // world-space camera
     drawWorld(); drawCollectibles(); drawEnemies(); drawProjectiles();
     drawPlayer(); drawBoss(); drawEffects();
     ctx.restore();
