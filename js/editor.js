@@ -721,5 +721,6 @@ const KQ_EDITOR = (() => {
   function getLevel() { return level; }
   function isActive() { return active; }
 
-  return { init, show, hide, newLevel, loadLevel, getLevel, render, handleKey, isActive };
+  return { init, show, hide, newLevel, loadLevel, getLevel, render, handleKey, isActive,
+           _debugActive: () => active, _debugLevel: () => !!level, _debugCtx: () => !!ctx };
 })();

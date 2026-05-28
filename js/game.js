@@ -3078,12 +3078,17 @@
 
     const editorBtn = document.getElementById('btn-editor');
     if (editorBtn) editorBtn.addEventListener('click', () => {
+      console.log('[KQ] btn-editor clicked, mode=', mode, 'gm=', KQ_SETTINGS.get('gameMode'));
       beep('menu');
       const gm = KQ_SETTINGS.get('gameMode') || 'platformer';
       if (gm === 'platformer') {
         mode = 'editor';
+        console.log('[KQ] calling KQ_EDITOR.show()');
         KQ_EDITOR.show();
+        console.log('[KQ] after show: active=', KQ_EDITOR._debugActive && KQ_EDITOR._debugActive());
+        console.log('[KQ] calling _showEditorPanel()');
         _showEditorPanel();
+        console.log('[KQ] menuPanel display:', document.getElementById('menuPanel')?.style.display);
       } else {
         _showGenreConfigPanel(gm);
       }
