@@ -272,6 +272,8 @@
     button.addEventListener("pointerup",   up,   { passive: false });
     button.addEventListener("pointercancel", up, { passive: false });
     button.addEventListener("pointerleave",  up, { passive: false });
+    // Block iOS long-press copy/paste menu on game buttons
+    button.addEventListener("contextmenu", (e) => e.preventDefault(), { passive: false });
   });
 
   canvas.addEventListener("pointerdown", (e) => {
@@ -2651,9 +2653,13 @@
     game.time += dt;
     frameworkInputLock = Math.max(0, frameworkInputLock - dt);
     KQ_GAMEPAD.poll();
-    // Show pause button only while actively playing or paused
+    // Show pause button only while actively playing or paused (not in editor/menus)
+    const _inEditor = (mode === 'editor');
     const _phb = document.getElementById('btn-pause-hud');
     if (_phb) _phb.style.display = (mode === 'playing' || mode === 'paused') ? 'flex' : 'none';
+    // Hide touch controls entirely in editor mode (they overlap the edit canvas)
+    const _tc = document.getElementById('touchControls');
+    if (_tc) _tc.style.setProperty('display', _inEditor ? 'none' : '', '');
     const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
     if (mode === "playing") {
       if (_isFrameworkMode(gmode)) {

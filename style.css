@@ -9,6 +9,7 @@ html, body {
   color: #f8fafc;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  -webkit-user-select: none;
   touch-action: manipulation; /* kill double-tap zoom; iOS ignores user-scalable=no */
   overscroll-behavior: none;  /* stop pull-to-refresh / rubber-band during play */
 }
