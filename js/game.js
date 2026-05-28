@@ -2689,8 +2689,10 @@
         updateMovingPlatforms(dt);
         updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
         if (currentLevel && !bossSpawned && !bossDefeated) {
-          const LEVELS = window.KQ_LEVELS || [];
-          if (levelIndex === LEVELS.length - 1 && player.x > game.worldWidth * 0.75) _spawnBoss();
+          // Boss on level id=6 (last built-in level) and any custom level
+          const isBuiltInFinal = currentLevel.id === 6;
+          const isCustom = !!currentLevel._custom;
+          if ((isBuiltInFinal || isCustom) && player.x > game.worldWidth * 0.75) _spawnBoss();
         }
         updateBoss(dt);
         updateEffects(dt); updateCamera(dt);
