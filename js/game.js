@@ -2695,7 +2695,21 @@
     if (mode === "title") { drawTitleScreen(); drawHintPopup(); return; }
     if (mode === "menu")  { ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,VIEW_W,VIEW_H); return; }
     if (mode === "editor") {
-      try { KQ_EDITOR.render(); } catch(e) { console.warn('Editor render error:', e); }
+      try {
+        KQ_EDITOR.render();
+      } catch(e) {
+        console.error('[KQ] Editor render error:', e);
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+        ctx.fillStyle = '#f87171';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Editor error: ' + e.message, VIEW_W/2, VIEW_H/2);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '14px sans-serif';
+        ctx.fillText('Check browser console (F12) for details', VIEW_W/2, VIEW_H/2 + 30);
+        ctx.textAlign = 'left';
+      }
       return;
     }
     if (mode === "levelselect") { drawLevelSelect(); return; }
@@ -2761,7 +2775,11 @@
   function loop(now) {
     const dt = Math.min(0.033, (now - lastTime) / 1000);
     lastTime = now;
-    update(dt); render();
+    try { update(dt); } catch(e) {
+      console.error('[KQ] update error:', e);
+      mode = 'menu'; _showMenuPanel(); // recover: go back to menu
+    }
+    try { render(); }  catch(e) { console.error('[KQ] render error:', e); }
     requestAnimationFrame(loop);
   }
 
