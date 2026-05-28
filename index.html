@@ -122,12 +122,24 @@
       <div id="editorSidePanel"></div>
     </section>
 
+    <button id="btn-pause-hud" aria-label="Pause / Menu" style="display:none">☰</button>
+
     <div id="rotateHint" aria-hidden="true">↺ Rotate phone for a bigger screen</div>
 
     <nav id="touchControls" aria-label="Touch controls">
-      <div class="touch-left">
+      <!-- Platformer: left/right strip (hidden in dpad mode) -->
+      <div class="touch-left" id="touch-lr">
         <button data-touch="left" aria-label="Move left">Left</button>
         <button data-touch="right" aria-label="Move right">Right</button>
+      </div>
+      <!-- D-pad: 4-way cross (hidden in platformer mode) -->
+      <div class="touch-dpad" id="touch-dpad" style="display:none">
+        <button data-touch="up"    aria-label="Up"    class="dpad-up">▲</button>
+        <div class="dpad-middle">
+          <button data-touch="left"  aria-label="Left"  class="dpad-left">◀</button>
+          <button data-touch="right" aria-label="Right" class="dpad-right">▶</button>
+        </div>
+        <button data-touch="down"  aria-label="Down"  class="dpad-down">▼</button>
       </div>
       <div class="touch-right">
         <button data-touch="jump"  aria-label="Jump"  class="touch-a">A</button>

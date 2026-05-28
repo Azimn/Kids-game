@@ -819,6 +819,25 @@ canvas#game {
 }
 @media (pointer: coarse) { #touchControls { display: flex; } }
 
+/* ── Pause / menu HUD button ─────────────────────────────── */
+#btn-pause-hud {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 200;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: rgba(15,23,42,0.75);
+  border: 2px solid rgba(255,255,255,0.25);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  display: none; /* shown via JS when playing */
+}
+
 /* Portrait: position:fixed makes top relative to the actual visible viewport,
    not the gameShell (which is 100vh and gets clipped by Safari's toolbar). */
 @media (orientation: portrait) and (pointer: coarse) {
@@ -899,6 +918,26 @@ canvas#game {
 .touch-left, .touch-right {
   display: flex; gap: 8px; align-items: flex-end;
   pointer-events: all;
+}
+
+/* D-pad cross layout */
+.touch-dpad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: all;
+}
+.dpad-middle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.touch-dpad button {
+  width: clamp(50px, 13vw, 68px) !important;
+  height: clamp(50px, 13vw, 68px) !important;
+  font-size: clamp(16px, 4.5vw, 24px) !important;
+  border-radius: 12px !important;
 }
 
 #touchControls button {

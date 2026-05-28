@@ -328,9 +328,19 @@
       restartCurrentMode();
     }
   }
+  function _syncDpad(gmode) {
+    // Show d-pad for genres that need up/down movement; LR strip for platformer/shooter/brawler
+    const needsDpad = gmode === 'dungeon' || gmode === 'puzzle' || gmode === 'racer';
+    const lr   = document.getElementById('touch-lr');
+    const dpad = document.getElementById('touch-dpad');
+    if (lr)   lr.style.display   = needsDpad ? 'none'  : 'flex';
+    if (dpad) dpad.style.display = needsDpad ? 'flex' : 'none';
+  }
+
   function _startSelectedGame() {
     ensureAudio();
     const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
+    _syncDpad(gmode);
     if (gmode === 'shooter') {
       _shooterInit();
       mode = 'playing';
@@ -346,6 +356,7 @@
   }
   function restartCurrentMode() {
     const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
+    _syncDpad(gmode);
     if (gmode === 'shooter') {
       _shooterInit();
       mode = 'playing';
@@ -2640,6 +2651,9 @@
     game.time += dt;
     frameworkInputLock = Math.max(0, frameworkInputLock - dt);
     KQ_GAMEPAD.poll();
+    // Show pause button only while actively playing or paused
+    const _phb = document.getElementById('btn-pause-hud');
+    if (_phb) _phb.style.display = (mode === 'playing' || mode === 'paused') ? 'flex' : 'none';
     const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
     if (mode === "playing") {
       if (_isFrameworkMode(gmode)) {
@@ -3096,6 +3110,12 @@
           if (fullscreenBtn) fullscreenBtn.textContent = document.fullscreenElement ? 'Small Screen' : 'Big Screen';
         });
       }
+    }
+
+    // ── Pause HUD button (mobile menu/pause) ──────────────────
+    const pauseHudBtn = document.getElementById('btn-pause-hud');
+    if (pauseHudBtn) {
+      pauseHudBtn.addEventListener('click', () => { ensureAudio(); handlePause(); });
     }
 
     const settingsBackBtn = document.getElementById('btn-settings-back');
