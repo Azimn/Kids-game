@@ -1052,25 +1052,24 @@
   function drawBoss() {
     if (!boss || !boss.alive) return;
     const ASSETS = window.KQ_ASSETS || {};
-    const bx = boss.x - cameraX;
     const bossArt = _enemyArtFor('boss', ASSETS);
-    if (!drawImg(bossArt, bx, boss.y, boss.w, boss.h)) {
+    if (!drawImg(bossArt, boss.x, boss.y, boss.w, boss.h)) {
       // Body
       ctx.fillStyle = '#dc2626';
-      ctx.fillRect(bx, boss.y, boss.w, boss.h);
+      ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
       // Eyes
       const eyeOff = Math.sin(boss.anim * 4) * 3;
       ctx.fillStyle = '#fff';
-      ctx.fillRect(bx + 14, boss.y + 18 + eyeOff, 14, 14);
-      ctx.fillRect(bx + 52, boss.y + 18 + eyeOff, 14, 14);
+      ctx.fillRect(boss.x + 14, boss.y + 18 + eyeOff, 14, 14);
+      ctx.fillRect(boss.x + 52, boss.y + 18 + eyeOff, 14, 14);
       ctx.fillStyle = '#111';
-      ctx.fillRect(bx + 18, boss.y + 22 + eyeOff, 8, 8);
-      ctx.fillRect(bx + 56, boss.y + 22 + eyeOff, 8, 8);
+      ctx.fillRect(boss.x + 18, boss.y + 22 + eyeOff, 8, 8);
+      ctx.fillRect(boss.x + 56, boss.y + 22 + eyeOff, 8, 8);
       // Label
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 12px system-ui';
       ctx.textAlign = 'center';
-      ctx.fillText('BOSS', bx + boss.w/2, boss.y + boss.h - 8);
+      ctx.fillText('BOSS', boss.x + boss.w/2, boss.y + boss.h - 8);
       ctx.textAlign = 'left';
     }
 
@@ -2674,7 +2673,7 @@
       } else {
         updateMovingPlatforms(dt);
         updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
-        if (currentLevel && currentLevel.id === 3 && !bossSpawned && !bossDefeated) {
+        if (currentLevel && currentLevel.id === 6 && !bossSpawned && !bossDefeated) {
           if (player.x > (currentLevel.width - 20) * 48) _spawnBoss();
         }
         updateBoss(dt);
