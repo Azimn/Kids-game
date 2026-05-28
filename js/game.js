@@ -965,9 +965,9 @@
   function _spawnBoss() {
     if (bossSpawned) return;
     bossSpawned = true;
-    // Spawn in the open area before the end staircase
-    const spawnX = (currentLevel ? currentLevel.width - 28 : 88) * 48;
-    const spawnY = (currentLevel ? currentLevel.height - 3 : 9) * 48 - 80;
+    // Spawn in the middle of the solid arena (cols 89-99, confirmed open ground)
+    const spawnX = 4512; // col 94 — centre of arena
+    const spawnY = 9 * 48 - 80; // row 9 height, above the floor
     boss = {
       x: spawnX,
       y: spawnY,
@@ -1012,9 +1012,9 @@
     // Spawn trigger: player crosses threshold
     if (!bossSpawned) return; // won't reach here, but guard
 
-    // Charge left/right within the open arena before the end staircase
-    const arenaRight = (currentLevel ? currentLevel.width - 20 : 96) * 48;
-    const arenaLeft  = (currentLevel ? currentLevel.width - 40 : 76) * 48;
+    // Bounce within the confirmed open arena: cols 89–99 (x 4272–4752)
+    const arenaLeft  = 4272;
+    const arenaRight = 4752;
     boss.x += boss.vx * dt;
     if (boss.x <= arenaLeft)               { boss.x = arenaLeft;            boss.vx =  200; }
     if (boss.x + boss.w >= arenaRight)     { boss.x = arenaRight - boss.w;  boss.vx = -200; }
@@ -2678,7 +2678,7 @@
         updateMovingPlatforms(dt);
         updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
         if (currentLevel && currentLevel.id === 6 && !bossSpawned && !bossDefeated) {
-          if (player.x > (currentLevel.width - 20) * 48) _spawnBoss();
+          if (player.x > 4176) _spawnBoss(); // col 87: past the last pit, entering boss arena
         }
         updateBoss(dt);
         updateEffects(dt); updateCamera(dt);
