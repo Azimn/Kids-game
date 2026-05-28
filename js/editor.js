@@ -302,7 +302,7 @@ const KQ_EDITOR = (() => {
 
   // ── Render ─────────────────────────────────────────────────
   function render() {
-    if (!active || !level) return;
+    if (!active || !level || !ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -699,6 +699,11 @@ const KQ_EDITOR = (() => {
   // ── Public API ─────────────────────────────────────────────
   function show() {
     active = true;
+    // Re-init canvas/ctx in case it was lost (e.g. after playing and returning)
+    if (!ctx) {
+      const c = document.getElementById('game');
+      if (c) { canvas = c; ctx = c.getContext('2d'); }
+    }
     if (!level) newLevel();
   }
   function hide() { active = false; }

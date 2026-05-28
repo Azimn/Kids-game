@@ -2694,7 +2694,10 @@
 
     if (mode === "title") { drawTitleScreen(); drawHintPopup(); return; }
     if (mode === "menu")  { ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,VIEW_W,VIEW_H); return; }
-    if (mode === "editor") { KQ_EDITOR.render(); return; }
+    if (mode === "editor") {
+      try { KQ_EDITOR.render(); } catch(e) { console.warn('Editor render error:', e); }
+      return;
+    }
     if (mode === "levelselect") { drawLevelSelect(); return; }
 
     const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
