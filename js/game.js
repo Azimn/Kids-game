@@ -166,7 +166,7 @@
   // Simpler: draw entity with tint overlay
   function drawWithTint(tintColor, x, y, w, h, drawFn) {
     drawFn();
-    if (!tintColor) return;
+    if (!tintColor || tintColor === '#ffffff' || tintColor === '#fff') return;
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
     ctx.globalAlpha = 0.5;
@@ -3263,7 +3263,11 @@
     });
 
     container.querySelectorAll('[data-tint-key]').forEach(input => {
-      input.addEventListener('input', () => KQ_SETTINGS.set(input.dataset.tintKey, input.value));
+      input.addEventListener('input', () => {
+        // Treat pure white as "no tint" — white multiply = no visible change but causes tint math
+        const val = input.value;
+        KQ_SETTINGS.set(input.dataset.tintKey, (val === '#ffffff' || val === '#fff') ? '' : val);
+      });
     });
     container.querySelectorAll('[data-tint-clear]').forEach(btn => {
       btn.addEventListener('click', () => {
