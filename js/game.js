@@ -2702,6 +2702,8 @@
     if (_isFrameworkMode(gmode) && (mode === 'playing' || mode === 'gameover' || mode === 'win' || mode === 'paused')) {
       const module = _getFrameworkModule(gmode);
       if (module && typeof module.render === 'function') module.render();
+      if (mode === 'win') _drawCredits(ctx);
+      if (mode === 'gameover') drawOverlay('Game Over!', '', 'Tap to Try Again');
       if (mode === 'paused') drawPauseMenu();
       return;
     }
