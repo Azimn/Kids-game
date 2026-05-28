@@ -2660,6 +2660,7 @@
     // Hide touch controls entirely in editor mode (they overlap the edit canvas)
     const _tc = document.getElementById('touchControls');
     if (_tc) _tc.style.setProperty('display', _inEditor ? 'none' : '', '');
+    document.body.classList.toggle('mode-editor', _inEditor);
     const gmode = KQ_SETTINGS.get('gameMode') || 'platformer';
     if (mode === "playing") {
       if (_isFrameworkMode(gmode)) {

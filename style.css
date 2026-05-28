@@ -865,6 +865,11 @@ canvas#game {
     top: 0;
     transform: none;
   }
+  /* Editor needs full height — no control bar */
+  body.mode-editor #gameShell {
+    height: min(100vh, 540px);
+    width: min(calc(min(100vh, 540px) * 16 / 9), 100vw, 960px);
+  }
 
   #touchControls {
     position: fixed !important;
