@@ -2286,10 +2286,6 @@
       ctx.font = "20px system-ui";
       ctx.fillText(pows.join(" "), 32, VIEW_H - 20);
     }
-    // Temporary debug: show level index and boss state
-    const LEVELS_DBG = window.KQ_LEVELS || [];
-    ctx.fillStyle = '#fbbf24'; ctx.font = '12px monospace';
-    ctx.fillText(`lvl:${levelIndex+1}/${LEVELS_DBG.length} id:${currentLevel?.id} x:${Math.floor(player.x)} boss:${bossSpawned}`, 32, VIEW_H - 40);
     ctx.restore();
   }
 
@@ -2693,7 +2689,8 @@
         updateMovingPlatforms(dt);
         updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
         if (currentLevel && !bossSpawned && !bossDefeated) {
-          if (player.x > game.worldWidth * 0.75) _spawnBoss();
+          const LEVELS = window.KQ_LEVELS || [];
+          if (levelIndex === LEVELS.length - 1 && player.x > game.worldWidth * 0.75) _spawnBoss();
         }
         updateBoss(dt);
         updateEffects(dt); updateCamera(dt);
