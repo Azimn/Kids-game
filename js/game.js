@@ -965,9 +965,12 @@
   function _spawnBoss() {
     if (bossSpawned) return;
     bossSpawned = true;
+    // Spawn in the open area before the end staircase
+    const spawnX = (currentLevel ? currentLevel.width - 28 : 88) * 48;
+    const spawnY = (currentLevel ? currentLevel.height - 3 : 9) * 48 - 80;
     boss = {
-      x: game.worldWidth - 14 * 48,
-      y: game.worldHeight - 12 * 48 + 48, // near floor
+      x: spawnX,
+      y: spawnY,
       w: 80, h: 80,
       hp: 5, maxHp: 5,
       vx: -200,
@@ -1009,11 +1012,12 @@
     // Spawn trigger: player crosses threshold
     if (!bossSpawned) return; // won't reach here, but guard
 
-    // Charge left/right
+    // Charge left/right within the open arena before the end staircase
+    const arenaRight = (currentLevel ? currentLevel.width - 20 : 96) * 48;
+    const arenaLeft  = (currentLevel ? currentLevel.width - 40 : 76) * 48;
     boss.x += boss.vx * dt;
-    // Bounce off walls
-    if (boss.x <= game.worldWidth - 20 * 48) { boss.x = game.worldWidth - 20 * 48; boss.vx = 200; }
-    if (boss.x + boss.w >= game.worldWidth - 1 * 48) { boss.x = game.worldWidth - 1 * 48 - boss.w; boss.vx = -200; }
+    if (boss.x <= arenaLeft)               { boss.x = arenaLeft;            boss.vx =  200; }
+    if (boss.x + boss.w >= arenaRight)     { boss.x = arenaRight - boss.w;  boss.vx = -200; }
 
     // Gravity — keep boss on floor
     boss.y += 800 * dt;
