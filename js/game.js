@@ -965,9 +965,21 @@
   function _spawnBoss() {
     if (bossSpawned) return;
     bossSpawned = true;
-    // Spawn in the middle of the solid arena (cols 89-99, confirmed open ground)
-    const spawnX = 4512; // col 94 — centre of arena
-    const spawnY = 9 * 48 - 80; // row 9 height, above the floor
+    // Find a solid floor tile in the right 20% of the level to stand on
+    const mapRows = currentLevel ? currentLevel.map : map;
+    const mapW    = currentLevel ? currentLevel.width : 100;
+    const startCol = Math.floor(mapW * 0.78);
+    let spawnCol = startCol;
+    let spawnRow = (mapRows ? mapRows.length : 12) - 1;
+    outer: for (let c = startCol; c < mapW - 2; c++) {
+      for (let r = 2; r < (mapRows ? mapRows.length : 12); r++) {
+        const ch = (mapRows[r] || '')[c] || '.';
+        const above = (mapRows[r-1] || '')[c] || '.';
+        if ((ch === 'X') && above === '.') { spawnCol = c; spawnRow = r; break outer; }
+      }
+    }
+    const spawnX = spawnCol * 48 - 40;
+    const spawnY = (spawnRow - 2) * 48;
     boss = {
       x: spawnX,
       y: spawnY,
@@ -1012,9 +1024,8 @@
     // Spawn trigger: player crosses threshold
     if (!bossSpawned) return; // won't reach here, but guard
 
-    // Bounce within the confirmed open arena: cols 89–99 (x 4272–4752)
-    const arenaLeft  = 4272;
-    const arenaRight = 4752;
+    const arenaLeft  = boss.x - 200;
+    const arenaRight = boss.x + 400;
     boss.x += boss.vx * dt;
     if (boss.x <= arenaLeft)               { boss.x = arenaLeft;            boss.vx =  200; }
     if (boss.x + boss.w >= arenaRight)     { boss.x = arenaRight - boss.w;  boss.vx = -200; }
@@ -2682,9 +2693,7 @@
         updateMovingPlatforms(dt);
         updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt);
         if (currentLevel && !bossSpawned && !bossDefeated) {
-          const LEVELS = window.KQ_LEVELS || [];
-          const isLastLevel = levelIndex === LEVELS.length - 1;
-          if (isLastLevel && player.x > game.worldWidth * 0.6) _spawnBoss();
+          if (player.x > game.worldWidth * 0.75) _spawnBoss();
         }
         updateBoss(dt);
         updateEffects(dt); updateCamera(dt);
