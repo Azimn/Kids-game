@@ -1983,8 +1983,20 @@
   function drawWorld() {
     if (!currentLevel) return;
     // Dark brown band from row 9 downward — shows through tile gaps (holes/pits)
-    ctx.fillStyle = '#2a0e04';
-    ctx.fillRect(0, 9 * TILE, game.worldWidth, game.worldHeight - 9 * TILE + 200);
+    // Void below the world (what you fall into) — dark brown
+    ctx.fillStyle = '#1a0802';
+    ctx.fillRect(0, game.worldHeight, game.worldWidth, 300);
+    // Pit holes in the ground rows — draw dark under empty tiles so
+    // gaps in the ground look like holes, not sky
+    ctx.fillStyle = '#1a0802';
+    const groundRows = currentLevel ? currentLevel.height - 2 : 10; // rows 10-11
+    for (let gy = groundRows; gy < (currentLevel ? currentLevel.height : 12); gy++) {
+      for (let gx = 0; gx < (currentLevel ? currentLevel.width : 100); gx++) {
+        if (tileAt(gx, gy) === '.') {
+          ctx.fillRect(gx * TILE, gy * TILE, TILE, TILE);
+        }
+      }
+    }
     const startCol = Math.max(0, Math.floor(cameraX / TILE) - 1);
     const endCol   = Math.min((map[0]||[]).length - 1, Math.ceil((cameraX + VIEW_W) / TILE) + 1);
     for (let ty = 0; ty < map.length; ty++)
