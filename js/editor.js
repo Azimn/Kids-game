@@ -302,7 +302,18 @@ const KQ_EDITOR = (() => {
 
   // ── Render ─────────────────────────────────────────────────
   function render() {
-    if (!active || !level || !ctx) return;
+    if (!active || !level || !ctx) {
+      // Debug: draw state on canvas so we can see what's wrong
+      const _c = document.getElementById('game');
+      if (_c) {
+        const _x = _c.getContext('2d');
+        _x.fillStyle = '#1e293b'; _x.fillRect(0,0,960,540);
+        _x.fillStyle = '#fbbf24'; _x.font = 'bold 18px sans-serif'; _x.textAlign = 'center';
+        _x.fillText('Editor not ready: active=' + active + ' level=' + !!level + ' ctx=' + !!ctx, 480, 270);
+        _x.textAlign = 'left';
+      }
+      return;
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
