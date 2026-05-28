@@ -65,10 +65,11 @@
       x, y, angle, speed: 0, color, isPlayer,
       lapCount: 0, waypointIndex: nearestWaypoint(x, y),
       prevWpIndex: nearestWaypoint(x, y),
-      item: null,        // 'boost' | 'shield' | null
+      item: null,
       shielded: false,
       boostTimer: 0,
       aiTargetWp: 1,
+      tintHue: isPlayer ? null : Math.floor(Math.random() * 360),
     };
   }
 
@@ -428,6 +429,15 @@
     }
 
     if (art(kart.isPlayer ? 'player' : 'rival', -KART_SIZE, -KART_SIZE, KART_SIZE * 2, KART_SIZE * 2)) {
+      // Tint rival cars a random hue by overlaying a semi-transparent color
+      if (!kart.isPlayer && kart.tintHue !== null) {
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = `hsl(${kart.tintHue}, 90%, 55%)`;
+        ctx.fillRect(-KART_SIZE, -KART_SIZE, KART_SIZE * 2, KART_SIZE * 2);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+      }
       ctx.restore();
       return;
     }
