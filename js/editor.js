@@ -698,9 +698,12 @@ const KQ_EDITOR = (() => {
 
   // ── Public API ─────────────────────────────────────────────
   function show() {
-    // Always re-grab canvas/ctx — safe to call multiple times
     const c = document.getElementById('game');
     if (c) { canvas = c; ctx = c.getContext('2d'); }
+    if (!panel) {
+      const p = document.getElementById('editorSidePanel');
+      if (p) { panel = p; _buildPanel(); _bindCanvasEvents(); }
+    }
     active = true;
     if (!level) newLevel();
   }
