@@ -302,18 +302,7 @@ const KQ_EDITOR = (() => {
 
   // ── Render ─────────────────────────────────────────────────
   function render() {
-    if (!active || !level || !ctx) {
-      // Debug: draw state on canvas so we can see what's wrong
-      const _c = document.getElementById('game');
-      if (_c) {
-        const _x = _c.getContext('2d');
-        _x.fillStyle = '#1e293b'; _x.fillRect(0,0,960,540);
-        _x.fillStyle = '#fbbf24'; _x.font = 'bold 18px sans-serif'; _x.textAlign = 'center';
-        _x.fillText('Editor not ready: active=' + active + ' level=' + !!level + ' ctx=' + !!ctx, 480, 270);
-        _x.textAlign = 'left';
-      }
-      return;
-    }
+    if (!active || !level || !ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -709,12 +698,10 @@ const KQ_EDITOR = (() => {
 
   // ── Public API ─────────────────────────────────────────────
   function show() {
+    // Always re-grab canvas/ctx — safe to call multiple times
+    const c = document.getElementById('game');
+    if (c) { canvas = c; ctx = c.getContext('2d'); }
     active = true;
-    // Re-init canvas/ctx in case it was lost (e.g. after playing and returning)
-    if (!ctx) {
-      const c = document.getElementById('game');
-      if (c) { canvas = c; ctx = c.getContext('2d'); }
-    }
     if (!level) newLevel();
   }
   function hide() { active = false; }

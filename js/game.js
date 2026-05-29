@@ -3095,17 +3095,12 @@
 
     const editorBtn = document.getElementById('btn-editor');
     if (editorBtn) editorBtn.addEventListener('click', () => {
-      console.log('[KQ] btn-editor clicked, mode=', mode, 'gm=', KQ_SETTINGS.get('gameMode'));
       beep('menu');
       const gm = KQ_SETTINGS.get('gameMode') || 'platformer';
       if (gm === 'platformer') {
         mode = 'editor';
-        console.log('[KQ] calling KQ_EDITOR.show()');
         KQ_EDITOR.show();
-        console.log('[KQ] after show: active=', KQ_EDITOR._debugActive && KQ_EDITOR._debugActive());
-        console.log('[KQ] calling _showEditorPanel()');
         _showEditorPanel();
-        console.log('[KQ] menuPanel display:', document.getElementById('menuPanel')?.style.display);
       } else {
         _showGenreConfigPanel(gm);
       }
@@ -3557,36 +3552,34 @@ window._KQ_EXPORT_MODE = true;
 
   // ── Boot ───────────────────────────────────────────────────
   function boot() {
-    loadImages();
-    _installFrameworkBridge();
+    try {
+      loadImages();
+      _installFrameworkBridge();
 
-    // Init level editor with canvas + side panel (creator mode only)
-    if (!window._KQ_EXPORT_MODE) {
-      const edPanel = document.getElementById('editorSidePanel');
-      if (edPanel && window.KQ_EDITOR) KQ_EDITOR.init(canvas, edPanel);
-    }
-
-    if (window.KQ_EXPORT_CONFIG) {
-      // Apply all settings baked in at export time (physics, lives, tints, etc.)
-      const cfg = window.KQ_EXPORT_CONFIG;
-      if (cfg.settings && typeof cfg.settings === 'object') {
-        for (const [k, v] of Object.entries(cfg.settings)) {
-          KQ_SETTINGS.set(k, v);
-        }
-      } else if (cfg.gameMode) {
-        // Legacy: older exports only stored gameMode
-        KQ_SETTINGS.set('gameMode', cfg.gameMode);
+      if (!window._KQ_EXPORT_MODE) {
+        const edPanel = document.getElementById('editorSidePanel');
+        if (edPanel && window.KQ_EDITOR) KQ_EDITOR.init(canvas, edPanel);
       }
+
+      if (window.KQ_EXPORT_CONFIG) {
+        const cfg = window.KQ_EXPORT_CONFIG;
+        if (cfg.settings && typeof cfg.settings === 'object') {
+          for (const [k, v] of Object.entries(cfg.settings)) KQ_SETTINGS.set(k, v);
+        } else if (cfg.gameMode) {
+          KQ_SETTINGS.set('gameMode', cfg.gameMode);
+        }
+      }
+
+      _initMenuEvents();
+      mode = 'title';
+      _hideAllPanels();
+      levelIndex = 0;
+      resetLevel(true);
+    } catch(e) {
+      console.error('[KQ] boot error:', e);
+      // Still start the loop so we can show an error on canvas
+      mode = 'title';
     }
-
-    _initMenuEvents();
-    mode = 'title';
-    _hideAllPanels();
-
-    // Set up a blank level so the canvas has something to draw on startup
-    levelIndex = 0;
-    resetLevel(true);
-
     requestAnimationFrame(loop);
   }
 
