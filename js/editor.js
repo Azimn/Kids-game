@@ -302,7 +302,7 @@ const KQ_EDITOR = (() => {
 
   // ── Render ─────────────────────────────────────────────────
   function render() {
-    if (!active || !level || !ctx) return;
+    if (!active || !level || !ctx || !canvas) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -672,6 +672,7 @@ const KQ_EDITOR = (() => {
   }
 
   function _refreshPanel() {
+    if (!panel) return;
     const inp = panel.querySelector('#ed-name');
     if (inp && level) inp.value = level.name;
   }
