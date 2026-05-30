@@ -332,7 +332,7 @@
   }
   function _syncDpad(gmode) {
     // Show d-pad for genres that need up/down movement; LR strip for platformer/shooter/brawler
-    const needsDpad = gmode === 'dungeon' || gmode === 'puzzle' || gmode === 'racer';
+    const needsDpad = gmode === 'dungeon' || gmode === 'puzzle' || gmode === 'racer' || gmode === 'brawler';
     const lr   = document.getElementById('touch-lr');
     const dpad = document.getElementById('touch-dpad');
     if (lr)   lr.style.display   = needsDpad ? 'none'  : 'flex';
@@ -1006,11 +1006,9 @@
     beep("win");
     // The flag tile is dynamically placed for level 3
     setTimeout(() => {
-      if (currentLevel && currentLevel.id === 3) {
-        // Find the F tile position from the map and ensure it triggers win
-        // Place flag at near-boss location dynamically
+      if (currentLevel && (currentLevel.id === 6 || currentLevel._custom)) {
         const flagCol = Math.floor((game.worldWidth - 3 * 48) / 48);
-        const flagRow = 6; // same row as existing F in the level
+        const flagRow = Math.max(1, (boss ? Math.floor(boss.y / 48) - 1 : 6));
         setTile(flagCol, flagRow, 'F');
         spawnPopup(flagCol * 48, flagRow * 48 - 30, "EXIT OPEN!");
       }
@@ -1914,11 +1912,14 @@
 
     // Wave announcement
     if (brawler.waveTimer > 0 && brawler.wave < BRAWLER_TOTAL_WAVES) {
+      const pulse = 1 + 0.08 * Math.sin(brawler.waveTimer * 12);
       ctx.save(); ctx.globalAlpha = Math.min(1, brawler.waveTimer);
-      ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 36px system-ui'; ctx.textAlign = 'center';
-      ctx.fillText(`Wave ${brawler.wave + 1}!`, VIEW_W/2, VIEW_H/2 - 20);
-      ctx.font = '18px system-ui'; ctx.fillStyle = '#e2e8f0';
-      ctx.fillText('Get ready…', VIEW_W/2, VIEW_H/2 + 16);
+      ctx.translate(VIEW_W/2, VIEW_H/2);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 42px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(`Wave ${brawler.wave + 1}!`, 0, -24);
+      ctx.font = 'bold 22px system-ui'; ctx.fillStyle = '#ef4444';
+      ctx.fillText('⚔️ FIGHT! ⚔️', 0, 18);
       ctx.restore();
     }
 

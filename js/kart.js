@@ -59,6 +59,7 @@
   // ── State ──────────────────────────────────────────────────────────────────
   let player, aiKarts, itemBoxes, countdown, raceStarted, raceOver;
   let showResult, resultTitle, resultSub;
+  let _goTimer = 0;
 
   function makeKart(x, y, angle, color, isPlayer) {
     return {
@@ -126,6 +127,7 @@
     countdown = 3;
     countdownTimer = 1.0;
     raceStarted = false;
+    _goTimer = 0;
   }
 
   // ── Lap Detection ─────────────────────────────────────────────────────────
@@ -305,12 +307,17 @@
     }
 
     if (!raceStarted) {
+      if (_goTimer > 0) {
+        _goTimer -= dt;
+        if (_goTimer <= 0) raceStarted = true;
+        return;
+      }
       _countdownAccum += dt;
       if (_countdownAccum >= 1.0) {
         _countdownAccum -= 1.0;
         countdown--;
         if (countdown <= 0) {
-          raceStarted = true;
+          _goTimer = 0.7;
           window._KQ_BEEP && window._KQ_BEEP('power');
         } else {
           window._KQ_BEEP && window._KQ_BEEP('menu');
@@ -506,8 +513,11 @@
 
   function drawCountdown(ctx, t) {
     if (raceStarted) return;
-    const label = countdown > 0 ? String(countdown) : 'GO!';
-    const scale = 1 + 0.3 * ((_countdownAccum < 0.3) ? (1 - _countdownAccum / 0.3) : 0);
+    const label = (countdown > 0 && _goTimer <= 0) ? String(countdown) : 'GO!';
+    const goFrac = _goTimer > 0 ? (0.7 - _goTimer) / 0.7 : 0;
+    const scale = _goTimer > 0
+      ? 1 + 0.5 * Math.sin(goFrac * Math.PI)
+      : 1 + 0.3 * ((_countdownAccum < 0.3) ? (1 - _countdownAccum / 0.3) : 0);
     ctx.save();
     ctx.translate(CX, CY);
     ctx.scale(scale, scale);
