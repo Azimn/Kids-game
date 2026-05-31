@@ -86,6 +86,7 @@
     bossHp: 0,
     bossX: 0, bossY: 0, bossVx: 100,
     bossShootTimer: 0,
+    waveAnnounce: 0, waveLabel: '',
   };
 
   // ── Hint popup system ──────────────────────────────────────
@@ -1181,24 +1182,41 @@
     if (shooter.wave >= TOTAL_WAVES) {
       // Boss wave
       shooter.bossActive = true;
-      shooter.bossHp = 20;
+      shooter.bossHp = 28;
       shooter.bossX = VIEW_W / 2 - 50;
       shooter.bossY = 60;
       shooter.bossVx = 120;
       shooter.bossShootTimer = 1.5;
+      shooter.waveAnnounce = 2.0;
+      shooter.waveLabel = '⚠️ BOSS!';
       return;
     }
+    // Wave configs: [rows, cols, minHp] — later waves have tougher enemies
+    const waveCfg = [
+      [3, 8,  1],   // wave 1: 24 easy
+      [4, 8,  1],   // wave 2: 32
+      [4, 9,  1],   // wave 3: 36, bottom row 2HP
+      [4, 10, 1],   // wave 4: 40, bottom 2 rows 2HP
+      [5, 10, 1],   // wave 5: 50, all 2HP
+    ];
+    const [rows, cols, _] = waveCfg[Math.min(shooter.wave, waveCfg.length - 1)];
     shooter.enemies = [];
-    const startX = 80, startY = 60;
+    const startX = Math.round((VIEW_W - cols * 56) / 2);
+    const startY = 60;
     const gapX = 56, gapY = 48;
-    for (let row = 0; row < SHOOTER_ROWS; row++) {
-      for (let col = 0; col < SHOOTER_COLS; col++) {
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        // HP: wave 3 bottom row = 2, wave 4 bottom 2 rows = 2, wave 5 all = 2
+        let hp = 1;
+        if (shooter.wave >= 4 && row >= rows - 2) hp = 2;
+        else if (shooter.wave >= 2 && row === rows - 1) hp = 2;
+        if (shooter.wave >= 4) hp = 2;
         shooter.enemies.push({
           x: startX + col * gapX,
           y: startY + row * gapY,
           w: SHOOTER_ENEMY_W, h: SHOOTER_ENEMY_H,
-          alive: true, hp: 1,
-          shootTimer: 3 + Math.random() * 4,
+          alive: true, hp,
+          shootTimer: 2.5 + Math.random() * 3.5,
           divingTo: null,
           bobOffset: Math.random() * Math.PI * 2,
           type: row === 0 ? 'flyer' : row < 2 ? 'jumper' : 'walker',
@@ -1207,6 +1225,8 @@
     }
     shooter.formDir = 1;
     shooter.waveTimer = 0;
+    shooter.waveAnnounce = 2.0;
+    shooter.waveLabel = `WAVE ${shooter.wave + 1}`;
   }
 
   function updateShooter(dt) {
@@ -1217,6 +1237,9 @@
       s.y += s.speed * dt;
       if (s.y > VIEW_H) { s.y = 0; s.x = Math.random() * VIEW_W; }
     }
+
+    // Wave announce countdown
+    if (shooter.waveAnnounce > 0) shooter.waveAnnounce -= dt;
 
     // Player movement
     const shipSpeed = 320 * KQ_SETTINGS.get('speedMult');
@@ -1465,6 +1488,19 @@
     // Effects
     drawEffects();
 
+    // Wave announcement banner
+    if (shooter.waveAnnounce > 0) {
+      const alpha = Math.min(1, shooter.waveAnnounce / 0.4);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = shooter.waveLabel.includes('BOSS') ? '#ef4444' : '#fbbf24';
+      ctx.font = 'bold 56px system-ui';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = '#000'; ctx.shadowBlur = 16;
+      ctx.fillText(shooter.waveLabel, VIEW_W / 2, VIEW_H / 2);
+      ctx.restore();
+    }
+
     // HUD
     ctx.textAlign = 'left';
     ctx.font = 'bold 18px system-ui';
@@ -1473,7 +1509,7 @@
     ctx.fillStyle = '#ef4444';
     ctx.fillText(`❤️ ${shooter.lives}`, 16, 52);
     ctx.fillStyle = '#94a3b8'; ctx.font = '13px system-ui';
-    ctx.fillText(`Wave ${shooter.wave + 1}`, VIEW_W - 80, 28);
+    ctx.fillText(`Wave ${Math.min(shooter.wave + 1, 6)} / 6`, VIEW_W - 90, 28);
 
     // Gameover / win overlay
     if (mode === 'gameover') drawOverlay('Game Over!', `Score: ${shooter.score}`, 'Press Enter or Tap to Try Again');
@@ -1509,7 +1545,7 @@
     hurtTimer: 0,
     invTimer: 0,
     bossActive: false,
-    bossHp: 0, bossMaxHp: 18,
+    bossHp: 0, bossMaxHp: 24,
     bossX: 700, bossY: 300,
     bossDir: -1, bossAnim: 0,
     bossPunchTimer: 0, bossMoveTimer: 0,
@@ -1533,7 +1569,7 @@
       score: 0, wave: 0, waveTimer: 2.5, waveClearing: false,
       enemies: [], scrollX: 0, scrollTarget: 0,
       hurtTimer: 0, invTimer: 0,
-      bossActive: false, bossHp: 18,
+      bossActive: false, bossHp: 24,
       bossX: 900, bossY: 300, bossDir: -1, bossAnim: 0,
       bossPunchTimer: 0, bossMoveTimer: 1,
     });
@@ -1554,23 +1590,31 @@
   }
 
   function _brawlerSpawnWave() {
-    const count = 2 + brawler.wave;
-    const types = ['walker', 'jumper', 'flyer'];
+    // Wave composition: ramp enemy types in gradually so all waves have variety
+    const waveMix = [
+      ['walker','walker','walker'],                                          // wave 0: 3 walkers
+      ['walker','walker','jumper','jumper'],                                  // wave 1: 4, intro jumpers
+      ['walker','jumper','jumper','flyer','flyer'],                           // wave 2: 5, intro flyers
+      ['jumper','jumper','flyer','flyer','flyer','flyer'],                    // wave 3: 6, jumper+flyer mix
+      ['jumper','flyer','flyer','flyer','flyer','flyer','flyer'],             // wave 4: 7, mostly flyers
+      ['walker','jumper','flyer','flyer','flyer','flyer','flyer','flyer'],    // wave 5: 8, everything
+    ];
+    const pool = waveMix[Math.min(brawler.wave, waveMix.length - 1)];
     brawler.enemies = [];
-    for (let i = 0; i < count; i++) {
-      const side = Math.random() < 0.5 ? 1 : -1;
-      const type = types[Math.min(brawler.wave, 2)];
+    pool.forEach((type, i) => {
+      const side = (i % 2 === 0) ? 1 : -1;
       brawler.enemies.push({
-        x: side > 0 ? VIEW_W + 40 + i * 60 : -80 - i * 60,
+        x: side > 0 ? VIEW_W + 40 + i * 50 : -80 - i * 50,
         y: BRAWLER_LANE_TOP + Math.random() * (BRAWLER_LANE_BOTTOM - BRAWLER_LANE_TOP - 50),
         w: 44, h: 50,
         hp: type === 'flyer' ? 2 : 1,
         alive: true, dir: -side,
         vx: 0, jumpZ: 0, jumpVy: 0, onGround: true,
-        hurtTimer: 0, attackTimer: 1.5 + Math.random() * 2,
+        hurtTimer: 0, attackTimer: 1.2 + Math.random() * 2,
         type,
+        bobOffset: Math.random() * Math.PI * 2,
       });
-    }
+    });
   }
 
   function updateBrawler(dt) {
@@ -1649,7 +1693,7 @@
       if (brawler.bossActive && brawler.bossHp > 0) {
         if (_brawlerOverlap(phx, phy, BRAWLER_PUNCH_W, BRAWLER_PUNCH_H,
             brawler.bossX, brawler.bossY, 64, 72)) {
-          brawler.bossHp--;
+          brawler.bossHp -= 2;
           screenShake = 5;
           spawnParticles(brawler.bossX + 32, brawler.bossY + 36, '#f97316', 6);
           beep('hurt');
@@ -1680,6 +1724,10 @@
         e.dir = dx > 0 ? 1 : -1;
       }
 
+      // Flyer type: sinusoidal bob (flies above ground)
+      if (e.type === 'flyer') {
+        e.jumpZ = -30 - Math.sin((e.bobOffset || 0) + brawler.playerAnim * 3) * 18;
+      }
       // Jumper type: occasional jump
       if (e.type === 'jumper' && e.onGround && Math.random() < dt * 1.2) {
         e.jumpVy = -400; e.onGround = false;

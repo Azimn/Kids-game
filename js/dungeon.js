@@ -42,25 +42,26 @@ window.KQ_RPG = (() => {
     },
     {
       name: 'Wizard', icon: '🧙',
-      hp: 65, mp: 100, atk: 8, def: 5,
+      hp: 70, mp: 100, atk: 10, def: 5,
       color: '#8e44ad',
-      spell: { name: 'Fireball', cost: 15, mult: 3.0, type: 'magic' },
+      spell: { name: 'Fireball', cost: 12, mult: 2.5, type: 'magic' },
       desc: 'Glass cannon — huge magic damage',
     },
     {
       name: 'Rogue', icon: '🗡️',
       hp: 90, mp: 50, atk: 14, def: 9,
       color: '#27ae60',
-      spell: { name: 'Vanish', cost: 10, mult: 0, type: 'stun' },
+      spell: { name: 'Vanish', cost: 12, mult: 0, type: 'stun' },
       desc: 'Balanced — stuns enemy one turn',
     },
   ];
 
   // ── Enemy templates ─────────────────────────────────────────
   const ENEMY_TEMPLATES = [
-    { name: 'Goblin',     color: '#2ecc71', hp: 15, atk: 6,  def: 2, exp: 8,  gold: 5,  isBoss: false },
-    { name: 'Orc',        color: '#e67e22', hp: 25, atk: 10, def: 5, exp: 15, gold: 10, isBoss: false },
-    { name: 'Dark Knight',color: '#7f8c8d', hp: 50, atk: 16, def: 8, exp: 30, gold: 25, isBoss: true  },
+    { name: 'Goblin',     color: '#2ecc71', hp: 18, atk: 6,  def: 2, exp: 8,  gold: 5,  isBoss: false },
+    { name: 'Skeleton',   color: '#bdc3c7', hp: 22, atk: 8,  def: 3, exp: 12, gold: 8,  isBoss: false },
+    { name: 'Orc',        color: '#e67e22', hp: 30, atk: 11, def: 6, exp: 18, gold: 12, isBoss: false },
+    { name: 'Dark Knight',color: '#7f8c8d', hp: 60, atk: 16, def: 8, exp: 35, gold: 30, isBoss: true  },
   ];
 
   // ── Overworld map layout (0=floor, 1=wall) ──────────────────
@@ -93,7 +94,7 @@ window.KQ_RPG = (() => {
     return idx === 1 ? 'wizard' : idx === 2 ? 'rogue' : 'warrior';
   }
   function enemyArtKey(idx) {
-    return idx === 2 ? 'boss' : idx === 1 ? 'orc' : 'goblin';
+    return idx === 3 ? 'boss' : idx === 2 ? 'orc' : 'goblin';
   }
 
   function rnd(n) { return Math.floor(Math.random() * (n + 1)); }
@@ -157,9 +158,10 @@ window.KQ_RPG = (() => {
   // ── Overworld enemies ────────────────────────────────────────
   function makeOverworldEnemies() {
     return [
-      { idx: 0, tx: 5,  ty: 3, defeated: false },
-      { idx: 1, tx: 10, ty: 7, defeated: false },
-      { idx: 2, tx: 13, ty: 3, defeated: false },  // boss
+      { idx: 0, tx: 5,  ty: 3,  defeated: false },  // Goblin
+      { idx: 1, tx: 8,  ty: 8,  defeated: false },  // Skeleton
+      { idx: 2, tx: 13, ty: 6,  defeated: false },  // Orc
+      { idx: 3, tx: 16, ty: 3,  defeated: false },  // Dark Knight (boss)
     ];
   }
 
@@ -380,7 +382,7 @@ window.KQ_RPG = (() => {
       if (rectsOverlap(p.x, p.y, p.w, p.h, nx2, ny2, 32, 32)) {
         rpg.npcTalked = true;
         startDialog([
-          "Adventurer! This dungeon has three\nguardians. Defeat them all to\nunlock the exit stairs!",
+          "Adventurer! This dungeon has four\nguardians. Defeat them all to\nunlock the exit stairs!",
           "Use ATTACK to fight, MAGIC costs MP\nbut hits hard. Potions heal 30 HP.\nGood luck — you'll need it!",
         ], () => { rpg.phase = 'overworld'; });
         return;

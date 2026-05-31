@@ -80,7 +80,7 @@
       enemies = [spawnSlime(8,3), spawnSlime(10,7), spawnSlime(14,3)];
     } else {
       enemies = [{ x:12*TILE, y:5*TILE-14, w:40, h:44,
-                   hp:8, maxHp:8, walkTimer:0, walkDur:0, dx:0, dy:0,
+                   hp:12, maxHp:12, walkTimer:0, walkDur:0, dx:0, dy:0,
                    hurtTimer:0, isBoss:true }];
     }
     player.x = px; player.y = py;
@@ -300,13 +300,23 @@
     const p=player;
     // boss shooting
     if (currentRoom===2 && enemies.length>0 && enemies[0].hp>0) {
+      const boss=enemies[0];
+      const enraged = boss.hp <= boss.maxHp / 2;
       bossShootTimer-=dt;
       if (bossShootTimer<=0) {
-        bossShootTimer=2.5;
-        const b=enemies[0];
-        const dx=(p.x+p.w/2)-(b.x+b.w/2), dy=(p.y+p.h/2)-(b.y+b.h/2);
+        bossShootTimer = enraged ? 1.4 : 2.2;
+        const bx=boss.x+boss.w/2, by=boss.y+boss.h/2;
+        const dx=(p.x+p.w/2)-bx, dy=(p.y+p.h/2)-by;
         const len=Math.sqrt(dx*dx+dy*dy)||1;
-        projectiles.push({x:b.x+b.w/2,y:b.y+b.h/2,vx:dx/len*120,vy:dy/len*120,r:4});
+        const spd = enraged ? 160 : 120;
+        // Always fire aimed shot; enraged adds two diagonal shots
+        projectiles.push({x:bx,y:by,vx:dx/len*spd,vy:dy/len*spd,r:4});
+        if (enraged) {
+          const angle = Math.atan2(dy,dx);
+          [angle - 0.45, angle + 0.45].forEach(a => {
+            projectiles.push({x:bx,y:by,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,r:4});
+          });
+        }
         window._KQ_BEEP('shoot');
       }
     }
@@ -329,7 +339,7 @@
       e.y=Math.max(0,Math.min(e.y,ROOM_H-e.h));
       // hurt player
       if (p.invTimer<=0 && overlaps(p,e)) {
-        p.hp-=1; p.invTimer=1.5;
+        p.hp-=1; p.invTimer=0.9;
         window._KQ_BEEP('hurt');
       }
     });

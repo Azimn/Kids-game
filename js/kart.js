@@ -14,12 +14,12 @@
   const HALF_W = 85;
   const NUM_WAYPOINTS = 32;
   const MAX_SPEED = 280;
-  const BOOST_SPEED = 450;
+  const BOOST_SPEED = 340;
   const AI_SPEED_MULT = 0.88;
   const TOTAL_LAPS = 3;
   const KART_SIZE = 22;
   const ITEM_BOX_SIZE = 24;
-  const BOOST_DURATION = 3;
+  const BOOST_DURATION = 2;
   const ITEM_RESPAWN = 8;
 
   // ── Waypoints along centerline ellipse ────────────────────────────────────
@@ -97,8 +97,9 @@
     player._speedMult = speedMult;
 
     aiKarts = [
-      makeKart(startX - 40, startY + 80, 0, '#ef4444', false),
-      makeKart(startX + 40, startY + 80, 0, '#22c55e', false),
+      makeKart(startX - 40, startY + 80,  0, '#ef4444', false),
+      makeKart(startX + 40, startY + 80,  0, '#22c55e', false),
+      makeKart(startX,      startY + 120, 0, '#f59e0b', false),
     ];
     // Set AI initial waypoint targets
     aiKarts.forEach(k => { k.aiTargetWp = 1; k.waypointIndex = 0; });
