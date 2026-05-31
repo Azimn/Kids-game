@@ -1013,7 +1013,7 @@
         setTile(flagCol, flagRow, 'F');
         spawnPopup(flagCol * 48, flagRow * 48 - 30, "EXIT OPEN!");
       }
-    }, 800);
+    }, 300);
   }
 
   function updateBoss(dt) {

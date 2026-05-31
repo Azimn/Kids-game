@@ -223,7 +223,12 @@
   // ── AI Update ─────────────────────────────────────────────────────────────
   function updateAI(kart, dt) {
     const sm = (window.KQ_SETTINGS && window.KQ_SETTINGS.get('speedMult')) || 1;
-    const maxSpd = MAX_SPEED * AI_SPEED_MULT * sm;
+    // Rubber banding: AI adapts speed based on gap to player
+    const playerProgress = player.laps * NUM_WAYPOINTS + player.waypointIndex;
+    const aiProgress     = kart.laps   * NUM_WAYPOINTS + kart.aiTargetWp;
+    const gap = playerProgress - aiProgress;
+    const rubberMult = gap > 6 ? 1.12 : gap < -4 ? 0.82 : 1.0;
+    const maxSpd = MAX_SPEED * AI_SPEED_MULT * sm * rubberMult;
 
     const target = WAYPOINTS[kart.aiTargetWp];
     const dx = target.x - kart.x, dy = target.y - kart.y;

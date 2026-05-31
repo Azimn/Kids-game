@@ -486,9 +486,12 @@
       // eyes
       ctx.fillStyle='#000';
       ctx.fillRect(e.x+5,e.y+6,5,5); ctx.fillRect(e.x+e.w-10,e.y+6,5,5);
-      // boss HP bar
       if (e.isBoss) {
-        const bw=60, bx=e.x+(e.w-bw)/2, by=e.y-10;
+        // crown label
+        ctx.fillStyle='#ffd700'; ctx.font='bold 13px system-ui'; ctx.textAlign='center';
+        ctx.fillText('👑', e.x+e.w/2, e.y-2);
+        // HP bar
+        const bw=60, bx=e.x+(e.w-bw)/2, by=e.y-14;
         ctx.fillStyle='#400'; ctx.fillRect(bx,by,bw,6);
         ctx.fillStyle='#f04'; ctx.fillRect(bx,by,bw*(e.hp/e.maxHp),6);
       }
