@@ -20,16 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify transfer chunks
-        run: |
-          sha256sum pegdrop_build/chunk00.b64 pegdrop_build/chunk01.b64 pegdrop_build/chunk02.b64 pegdrop_build/chunk03.b64 pegdrop_build/chunk04.b64
-          cat pegdrop_build/chunk00.b64 pegdrop_build/chunk01.b64 pegdrop_build/chunk02.b64 pegdrop_build/chunk03.b64 pegdrop_build/chunk04.b64 > pegdrop_build/pegdrop-src-verified.b64
-          sha256sum pegdrop_build/pegdrop-src-verified.b64
-      - name: Restore Peg Drop source
+      - name: Restore verified Peg Drop source
         run: |
           mkdir -p pegdrop_build/src
+          cat pegdrop_build/chunk00.b64 pegdrop_build/chunk01.b64 pegdrop_build/chunk02.b64 pegdrop_build/c3_00.b64 pegdrop_build/c3_01.b64 pegdrop_build/c3_tail.b64 pegdrop_build/chunk04.b64 > pegdrop_build/pegdrop-src-verified.b64
+          echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  pegdrop_build/pegdrop-src-verified.b64' | sha256sum -c -
           base64 --decode pegdrop_build/pegdrop-src-verified.b64 > pegdrop_build/pegdrop-src.tgz
           tar -xzf pegdrop_build/pegdrop-src.tgz -C pegdrop_build/src
+          ls -la pegdrop_build/src
       - name: Download GBDK 4.3.0
         working-directory: pegdrop_build
         run: |
@@ -43,6 +41,7 @@ jobs:
           make LCC="$GITHUB_WORKSPACE/pegdrop_build/gbdk/bin/lcc"
           test -s pegdrop_deluxe.gb
           sha256sum pegdrop_deluxe.gb
+          ls -lh pegdrop_deluxe.gb
       - uses: actions/upload-artifact@v4
         with:
           name: pegdrop-deluxe-compiled-rom
