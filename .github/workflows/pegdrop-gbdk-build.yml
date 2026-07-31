@@ -25,7 +25,9 @@ jobs:
       - name: Restore Peg Drop source
         run: |
           mkdir -p pegdrop_build/src
-          base64 --decode pegdrop_build/pegdrop-src.b64 > pegdrop_build/pegdrop-src.tgz
+          cat pegdrop_build/chunk00.b64 pegdrop_build/chunk01.b64 pegdrop_build/chunk02.b64 pegdrop_build/chunk03.b64 pegdrop_build/chunk04.b64 > pegdrop_build/pegdrop-src-verified.b64
+          echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  pegdrop_build/pegdrop-src-verified.b64' | sha256sum -c -
+          base64 --decode pegdrop_build/pegdrop-src-verified.b64 > pegdrop_build/pegdrop-src.tgz
           tar -xzf pegdrop_build/pegdrop-src.tgz -C pegdrop_build/src
           ls -la pegdrop_build/src
 
