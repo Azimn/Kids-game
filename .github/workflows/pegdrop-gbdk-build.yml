@@ -27,7 +27,6 @@ jobs:
           echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  pegdrop_build/pegdrop-src-verified.b64' | sha256sum -c -
           base64 --decode pegdrop_build/pegdrop-src-verified.b64 > pegdrop_build/pegdrop-src.tgz
           tar -xzf pegdrop_build/pegdrop-src.tgz -C pegdrop_build/src
-          ls -la pegdrop_build/src
       - name: Download GBDK 4.3.0
         working-directory: pegdrop_build
         run: |
@@ -42,6 +41,28 @@ jobs:
           test -s pegdrop_deluxe.gb
           sha256sum pegdrop_deluxe.gb
           ls -lh pegdrop_deluxe.gb
+      - name: Install headless Game Boy emulator
+        run: python -m pip install --disable-pip-version-check pyboy pillow
+      - name: Boot and exercise ROM
+        working-directory: pegdrop_build/src
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from pyboy import PyBoy
+
+          rom = Path('pegdrop_deluxe.gb')
+          pyboy = PyBoy(str(rom), window='null', sound_emulated=False)
+          pyboy.tick(180)
+          pyboy.button('start')
+          pyboy.tick(120)
+          pyboy.button('a')
+          pyboy.tick(360)
+          image = pyboy.screen.image
+          image.save('emulator-smoke.png')
+          assert image.getbbox() is not None, 'Emulator produced a blank frame'
+          pyboy.stop(save=False)
+          print('ROM booted, accepted input, advanced frames, and rendered a nonblank screen')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: pegdrop-deluxe-compiled-rom
@@ -49,4 +70,5 @@ jobs:
             pegdrop_build/src/pegdrop_deluxe.gb
             pegdrop_build/src/pegdrop_deluxe.map
             pegdrop_build/src/pegdrop_deluxe.sym
+            pegdrop_build/src/emulator-smoke.png
           if-no-files-found: error
