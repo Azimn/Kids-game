@@ -7,6 +7,12 @@ on:
     paths:
       - 'pegdrop_build/**'
       - '.github/workflows/pegdrop-gbdk-build.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'pegdrop_build/**'
+      - '.github/workflows/pegdrop-gbdk-build.yml'
   workflow_dispatch:
 
 jobs:
