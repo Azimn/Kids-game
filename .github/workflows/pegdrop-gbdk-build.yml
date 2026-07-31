@@ -1,0 +1,50 @@
+name: Peg Drop GBDK Build
+
+on:
+  push:
+    branches:
+      - pegdrop-gbdk-build
+    paths:
+      - 'pegdrop_build/**'
+      - '.github/workflows/pegdrop-gbdk-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out build branch
+        uses: actions/checkout@v4
+
+      - name: Restore Peg Drop source
+        run: |
+          mkdir -p pegdrop_build/src
+          base64 --decode pegdrop_build/pegdrop-src.b64 > pegdrop_build/pegdrop-src.tgz
+          tar -xzf pegdrop_build/pegdrop-src.tgz -C pegdrop_build/src
+          ls -la pegdrop_build/src
+
+      - name: Download GBDK 4.3.0
+        working-directory: pegdrop_build
+        run: |
+          wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
+          tar -xzf gbdk-linux64.tar.gz
+          test -x gbdk/bin/lcc
+
+      - name: Compile ROM
+        working-directory: pegdrop_build/src
+        run: |
+          make clean || true
+          make LCC="$GITHUB_WORKSPACE/pegdrop_build/gbdk/bin/lcc"
+          test -s pegdrop_deluxe.gb
+          sha256sum pegdrop_deluxe.gb
+          ls -lh pegdrop_deluxe.gb
+
+      - name: Upload ROM and symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: pegdrop-deluxe-compiled-rom
+          path: |
+            pegdrop_build/src/pegdrop_deluxe.gb
+            pegdrop_build/src/pegdrop_deluxe.map
+            pegdrop_build/src/pegdrop_deluxe.sym
+          if-no-files-found: error
