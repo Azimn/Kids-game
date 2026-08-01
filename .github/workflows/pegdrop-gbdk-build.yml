@@ -34,7 +34,7 @@ jobs:
           from pathlib import Path
           p=Path('main.c')
           s=p.read_text()
-          decl='''\n/* Fixed WRAM debug mirrors for state-aware emulator tests. */\n__at (0xC100) volatile uint8_t dbg_signature;\n__at (0xC101) volatile uint8_t dbg_state;\n__at (0xC102) volatile uint8_t dbg_level;\n__at (0xC103) volatile uint8_t dbg_balls_left;\n__at (0xC104) volatile uint8_t dbg_orange_remaining;\n__at (0xC105) volatile uint8_t dbg_active_ball_count;\n__at (0xC106) volatile uint8_t dbg_fever;\n__at (0xC107) volatile uint8_t dbg_power_active;\n__at (0xC108) volatile uint16_t dbg_ball_frames;\n__at (0xC10A) volatile uint32_t dbg_score;\n__at (0xC10E) volatile uint32_t dbg_shot_score;\n\n'''
+          decl='''\n/* Fixed WRAM debug mirrors for state-aware emulator tests. */\n__at (0xC700) volatile uint8_t dbg_signature;\n__at (0xC701) volatile uint8_t dbg_state;\n__at (0xC702) volatile uint8_t dbg_level;\n__at (0xC703) volatile uint8_t dbg_balls_left;\n__at (0xC704) volatile uint8_t dbg_orange_remaining;\n__at (0xC705) volatile uint8_t dbg_active_ball_count;\n__at (0xC706) volatile uint8_t dbg_fever;\n__at (0xC707) volatile uint8_t dbg_power_active;\n__at (0xC708) volatile uint16_t dbg_ball_frames;\n__at (0xC70A) volatile uint32_t dbg_score;\n__at (0xC70E) volatile uint32_t dbg_shot_score;\n\n'''
           s=s.replace('typedef int16_t fx_t;\n',decl+'typedef int16_t fx_t;\n')
           func='''\nstatic void update_debug_mirrors(void) {\n    dbg_signature=0xA5; dbg_state=state; dbg_level=level_index;\n    dbg_balls_left=balls_left; dbg_orange_remaining=orange_remaining;\n    dbg_active_ball_count=active_ball_count; dbg_fever=fever;\n    dbg_power_active=power_active; dbg_ball_frames=balls[0].frames;\n    dbg_score=score; dbg_shot_score=shot_score;\n}\n\n'''
           s=s.replace('void main(void) {',func+'void main(void) {')
@@ -47,7 +47,7 @@ jobs:
           from pathlib import Path
           from pyboy import PyBoy
           ROM=Path(__file__).resolve().parents[1]/'pegdrop_deluxe.gb'
-          BASE=0xC100
+          BASE=0xC700
           pyboy=PyBoy(str(ROM),window='null',sound_emulated=False)
           pyboy.set_emulation_speed(0)
           def tick(n=1):
@@ -57,18 +57,23 @@ jobs:
           def u16(o): return u8(o)|(u8(o+1)<<8)
           def u32(o): return u16(o)|(u16(o+2)<<16)
           def snap(): return {'sig':u8(0),'state':u8(1),'level':u8(2),'balls':u8(3),'orange':u8(4),'active':u8(5),'fever':u8(6),'power':u8(7),'frames':u16(8),'score':u32(10),'shot_score':u32(14)}
-          press('start',5); tick(10); press('a',5); tick(15); press('a',5); tick(15); press('a',5); tick(20)
-          start=snap(); assert start['sig']==0xA5 and start['state']==2 and start['balls']==10 and start['orange']==25
-          press('a',2); tick(8); launched=snap(); assert launched['active']>0 and launched['balls']==9
-          press('start',2); tick(30); a=snap(); tick(60); b=snap(); assert a['frames']==b['frames']; press('start',2); tick(5)
+          tick(60)
+          assert snap()['sig']==0xA5, snap()
+          # Advance title, chapter/map, ready, then play, using mirrored state.
+          for _ in range(8):
+              if snap()['state']==2: break
+              press('a',3); tick(20)
+          start=snap(); assert start['state']==2 and start['balls']==10 and start['orange']==25, start
+          press('a',2); tick(8); launched=snap(); assert launched['active']>0 and launched['balls']==9, launched
+          press('start',2); tick(30); a=snap(); tick(60); b=snap(); assert a['frames']==b['frames'], (a,b); press('start',2); tick(5)
           for _ in range(1150):
               pyboy.tick()
               if snap()['active']==0: break
-          resolved=snap(); assert resolved['active']==0 and resolved['frames']==0
+          resolved=snap(); assert resolved['active']==0 and resolved['frames']==0, resolved
           before=resolved['balls']; press('right',2); tick(2); press('a',2); tick(8)
-          second=snap(); assert second['active']>0 and second['balls']==before-1
+          second=snap(); assert second['active']>0 and second['balls']==before-1, second
           pyboy.screen.image.save('emulator-state-aware.png')
-          Path('state-aware-results.txt').write_text('PASS\n'+repr({'start':start,'launched':launched,'resolved':resolved,'second':second})+'\n')
+          Path('state-aware-results.txt').write_text('PASS\n'+repr({'start':start,'launched':launched,'paused':a,'resolved':resolved,'second':second})+'\n')
           pyboy.stop(save=False)
           print('PASS',start,launched,resolved,second)
           PY
