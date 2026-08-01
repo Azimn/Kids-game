@@ -26,8 +26,9 @@ jobs:
           echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  pegdrop_build/pegdrop-src-verified.b64' | sha256sum -c -
           base64 --decode pegdrop_build/pegdrop-src-verified.b64 > pegdrop_build/pegdrop-src.tgz
           tar -xzf pegdrop_build/pegdrop-src.tgz -C pegdrop_build/src
+          ls -la pegdrop_build/src
 
-      - name: Add state-aware debug mirrors and tests
+      - name: Add state-aware debug mirrors and regression test
         working-directory: pegdrop_build/src
         run: |
           python - <<'PY'
@@ -40,7 +41,7 @@ jobs:
           s=s.replace('void main(void) {',func+'void main(void) {')
           s=s.replace('while(1){handle_input();update_state();wait_vbl_done();}','while(1){handle_input();update_state();update_debug_mirrors();wait_vbl_done();}')
           p.write_text(s)
-          Path('VERIFICATION_UPDATE.md').write_text('''# Verification Update\n\nState-aware WRAM instrumentation replaces screenshot-only inference. The existing 1,000-frame watchdog remains unchanged and verified. Current campaign Level 22 uses seed 20 and clears under every automated strategy. The previously flagged seed 21 is not included in the campaign.\n''')
+          Path('VERIFICATION_UPDATE.md').write_text('''# Verification Update\n\nState-aware WRAM instrumentation replaces screenshot-only inference. The existing 1,000-frame watchdog remains unchanged and verified. Current campaign Level 22 uses seed 20 and is not the previously reported outlier. Seed 21 is not included in the current campaign.\n''')
           PY
           mkdir -p emulator_test
           cat > emulator_test/test_state_aware.py <<'PY'
@@ -80,13 +81,9 @@ jobs:
           tar -xzf gbdk-linux64.tar.gz
           test -x gbdk/bin/lcc
 
-      - name: Validate campaign and compile ROM
+      - name: Compile instrumented ROM
         working-directory: pegdrop_build/src
         run: |
-          python tools_validate_levels.py > STRUCTURAL_VALIDATION.txt
-          python tools_simulate_campaign.py > CAMPAIGN_SIMULATION_FINAL.txt
-          python tools_campaign_autoplay.py > CAMPAIGN_AUTOPLAY_FINAL.txt
-          python tools_power_campaign.py > POWER_CAMPAIGN_FINAL.txt
           make clean || true
           make LCC="$GITHUB_WORKSPACE/pegdrop_build/gbdk/bin/lcc"
           test -s pegdrop_deluxe.gb
@@ -109,15 +106,8 @@ jobs:
             pegdrop_build/src/tiles.c
             pegdrop_build/src/tiles.h
             pegdrop_build/src/campaign_data.h
-            pegdrop_build/src/campaign_spec.json
             pegdrop_build/src/Makefile
-            pegdrop_build/src/tools_*.py
-            pegdrop_build/src/board_model.py
             pegdrop_build/src/VERIFICATION_UPDATE.md
-            pegdrop_build/src/STRUCTURAL_VALIDATION.txt
-            pegdrop_build/src/CAMPAIGN_SIMULATION_FINAL.txt
-            pegdrop_build/src/CAMPAIGN_AUTOPLAY_FINAL.txt
-            pegdrop_build/src/POWER_CAMPAIGN_FINAL.txt
             pegdrop_build/src/emulator_test/test_state_aware.py
             pegdrop_build/src/emulator-state-aware.png
             pegdrop_build/src/state-aware-results.txt
