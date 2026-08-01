@@ -26,7 +26,6 @@ jobs:
           echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  pegdrop_build/pegdrop-src-verified.b64' | sha256sum -c -
           base64 --decode pegdrop_build/pegdrop-src-verified.b64 > pegdrop_build/pegdrop-src.tgz
           tar -xzf pegdrop_build/pegdrop-src.tgz -C pegdrop_build/src
-          ls -la pegdrop_build/src
 
       - name: Add state-aware debug mirrors and regression test
         working-directory: pegdrop_build/src
@@ -35,7 +34,7 @@ jobs:
           from pathlib import Path
           p=Path('main.c')
           s=p.read_text()
-          decl='''\n/* Fixed WRAM debug mirrors for state-aware emulator tests. */\nvolatile uint8_t dbg_signature __at (0xC100);\nvolatile uint8_t dbg_state __at (0xC101);\nvolatile uint8_t dbg_level __at (0xC102);\nvolatile uint8_t dbg_balls_left __at (0xC103);\nvolatile uint8_t dbg_orange_remaining __at (0xC104);\nvolatile uint8_t dbg_active_ball_count __at (0xC105);\nvolatile uint8_t dbg_fever __at (0xC106);\nvolatile uint8_t dbg_power_active __at (0xC107);\nvolatile uint16_t dbg_ball_frames __at (0xC108);\nvolatile uint32_t dbg_score __at (0xC10A);\nvolatile uint32_t dbg_shot_score __at (0xC10E);\n\n'''
+          decl='''\n/* Fixed WRAM debug mirrors for state-aware emulator tests. */\n__at (0xC100) volatile uint8_t dbg_signature;\n__at (0xC101) volatile uint8_t dbg_state;\n__at (0xC102) volatile uint8_t dbg_level;\n__at (0xC103) volatile uint8_t dbg_balls_left;\n__at (0xC104) volatile uint8_t dbg_orange_remaining;\n__at (0xC105) volatile uint8_t dbg_active_ball_count;\n__at (0xC106) volatile uint8_t dbg_fever;\n__at (0xC107) volatile uint8_t dbg_power_active;\n__at (0xC108) volatile uint16_t dbg_ball_frames;\n__at (0xC10A) volatile uint32_t dbg_score;\n__at (0xC10E) volatile uint32_t dbg_shot_score;\n\n'''
           s=s.replace('typedef int16_t fx_t;\n',decl+'typedef int16_t fx_t;\n')
           func='''\nstatic void update_debug_mirrors(void) {\n    dbg_signature=0xA5; dbg_state=state; dbg_level=level_index;\n    dbg_balls_left=balls_left; dbg_orange_remaining=orange_remaining;\n    dbg_active_ball_count=active_ball_count; dbg_fever=fever;\n    dbg_power_active=power_active; dbg_ball_frames=balls[0].frames;\n    dbg_score=score; dbg_shot_score=shot_score;\n}\n\n'''
           s=s.replace('void main(void) {',func+'void main(void) {')
