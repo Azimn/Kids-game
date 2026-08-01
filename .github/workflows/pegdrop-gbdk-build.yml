@@ -43,25 +43,97 @@ jobs:
           ls -lh pegdrop_deluxe.gb
       - name: Install headless Game Boy emulator
         run: python -m pip install --disable-pip-version-check pyboy pillow
-      - name: Boot and exercise ROM
+      - name: Extended gameplay exercise
         working-directory: pegdrop_build/src
         run: |
           python - <<'PY'
           from pathlib import Path
+          from hashlib import sha256
+          import json
+          from PIL import Image, ImageDraw
           from pyboy import PyBoy
 
-          rom = Path('pegdrop_deluxe.gb')
-          pyboy = PyBoy(str(rom), window='null', sound_emulated=False)
-          pyboy.tick(180)
-          pyboy.button('start')
-          pyboy.tick(120)
-          pyboy.button('a')
-          pyboy.tick(360)
-          image = pyboy.screen.image
-          image.save('emulator-smoke.png')
-          assert image.getbbox() is not None, 'Emulator produced a blank frame'
+          out = Path('emulator_test')
+          out.mkdir(exist_ok=True)
+          pyboy = PyBoy('pegdrop_deluxe.gb', window='null', sound_emulated=False)
+          records = []
+
+          def tick(n):
+              for _ in range(n):
+                  pyboy.tick()
+
+          def press(name, settle=45):
+              pyboy.button(name)
+              tick(settle)
+
+          def capture(label):
+              img = pyboy.screen.image.copy()
+              path = out / f'{len(records):02d}_{label}.png'
+              img.save(path)
+              raw = img.tobytes()
+              records.append({
+                  'label': label,
+                  'file': path.name,
+                  'sha256': sha256(raw).hexdigest(),
+                  'colors': len(img.getcolors(maxcolors=1000000) or []),
+                  'bbox': img.getbbox(),
+              })
+
+          tick(180)
+          capture('title_idle')
+          press('start', 90)
+          capture('after_start')
+
+          # Advance through the adventure presentation until the board is reached.
+          for i in range(7):
+              press('a', 90)
+              capture(f'advance_{i+1}')
+
+          # Exercise precision aiming and five full shots.
+          directions = [('left', 6), ('right', 12), ('left', 4), ('right', 8), ('left', 10)]
+          for shot, (direction, count) in enumerate(directions, 1):
+              for _ in range(count):
+                  press(direction, 3)
+              capture(f'shot_{shot}_aimed')
+              press('a', 3)
+              capture(f'shot_{shot}_launch')
+              for sample in range(1, 8):
+                  tick(120)
+                  capture(f'shot_{shot}_flight_{sample}')
+              tick(240)
+              capture(f'shot_{shot}_settled')
+
+          # Check pause and resume behavior.
+          press('start', 60)
+          capture('paused')
+          press('start', 60)
+          capture('resumed')
+
           pyboy.stop(save=False)
-          print('ROM booted, accepted input, advanced frames, and rendered a nonblank screen')
+
+          unique_frames = len({r['sha256'] for r in records})
+          assert records[0]['bbox'] is not None, 'Blank title frame'
+          assert unique_frames >= 12, f'Insufficient visual state changes: {unique_frames}'
+
+          (out / 'report.json').write_text(json.dumps({
+              'frames_captured': len(records),
+              'unique_frames': unique_frames,
+              'records': records,
+          }, indent=2))
+
+          thumbs = []
+          chosen = records[:9] + records[9::9]
+          for rec in chosen[:16]:
+              img = Image.open(out / rec['file']).convert('RGB').resize((320, 288))
+              canvas = Image.new('RGB', (320, 316), 'black')
+              canvas.paste(img, (0, 28))
+              ImageDraw.Draw(canvas).text((6, 7), rec['label'], fill='white')
+              thumbs.append(canvas)
+          sheet = Image.new('RGB', (1280, 1264), 'black')
+          for i, img in enumerate(thumbs):
+              sheet.paste(img, ((i % 4) * 320, (i // 4) * 316))
+          sheet.save(out / 'gameplay_contact_sheet.png')
+          print(f'Captured {len(records)} frames with {unique_frames} unique rendered states')
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -70,5 +142,5 @@ jobs:
             pegdrop_build/src/pegdrop_deluxe.gb
             pegdrop_build/src/pegdrop_deluxe.map
             pegdrop_build/src/pegdrop_deluxe.sym
-            pegdrop_build/src/emulator-smoke.png
+            pegdrop_build/src/emulator_test/**
           if-no-files-found: error
