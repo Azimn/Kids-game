@@ -50,8 +50,11 @@ jobs:
           pyboy.set_emulation_speed(0)
           def tick(n=1):
               for _ in range(n): pyboy.tick()
-          def press(name,n=2):
-              pyboy.button(name); tick(n)
+          def press(name, held=2, released=3):
+              pyboy.button_press(name)
+              tick(held)
+              pyboy.button_release(name)
+              tick(released)
           def locate():
               for a in range(0xC000,0xDFF0):
                   if pyboy.memory[a]==0xA5 and pyboy.memory[a+1]==0x5A:
@@ -66,31 +69,26 @@ jobs:
           def u32(o): return u24(o)|(u8(o+3)<<24)
           def snap():
               return {'state':u8(2),'level':u8(3),'balls':u8(4),'orange':u8(5),'active':u8(6),'fever':u8(7),'power':u8(8),'frames':u16(9),'score':u32(11),'shot_score':u24(15)}
-          # Advance menus until gameplay is reached, reading state after every press.
           for button in ['start','a','a','a','a','a']:
               if snap()['state']==2: break
-              press(button,3); tick(25)
+              press(button); tick(20)
+          tick(10)
           start=snap()
           assert start['state']==2 and start['level']==0 and start['balls']==10 and start['orange']==25, start
-          # Launch and verify ball consumption and active state.
-          press('a',2); tick(10)
+          press('a'); tick(10)
           launched=snap()
           assert launched['active']>0 and launched['balls']==9, launched
-          # Pause must freeze the internal ball frame counter.
-          press('start',2); tick(20); paused_a=snap(); tick(60); paused_b=snap()
+          press('start'); tick(20); paused_a=snap(); tick(60); paused_b=snap()
           assert paused_a['frames']==paused_b['frames'], (paused_a,paused_b)
-          press('start',2); tick(5)
-          # Wait for natural or watchdog resolution.
+          press('start'); tick(5)
           for _ in range(1200):
               pyboy.tick()
               if snap()['active']==0: break
           resolved=snap()
           assert resolved['active']==0 and resolved['frames']==0, resolved
-          # Score must commit if the shot hit anything; in all cases shot_score must clear.
           assert resolved['shot_score']==0, resolved
-          # Second launch proves input control returned.
           before=resolved['balls']
-          press('right',2); tick(3); press('a',2); tick(10)
+          press('right'); tick(3); press('a'); tick(10)
           second=snap()
           assert second['active']>0 and second['balls']==before-1, second
           pyboy.screen.image.save('emulator-state-aware.png')
