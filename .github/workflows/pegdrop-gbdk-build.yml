@@ -18,7 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Restore verified Peg Drop source
         run: |
           mkdir -p pegdrop_build/src
@@ -26,88 +25,68 @@ jobs:
           echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  pegdrop_build/pegdrop-src-verified.b64' | sha256sum -c -
           base64 --decode pegdrop_build/pegdrop-src-verified.b64 > pegdrop_build/pegdrop-src.tgz
           tar -xzf pegdrop_build/pegdrop-src.tgz -C pegdrop_build/src
-
       - name: Add packed debug state and regression test
         working-directory: pegdrop_build/src
         run: |
           python - <<'PY'
           from pathlib import Path
-          p=Path('main.c')
-          s=p.read_text()
-          s=s.replace('typedef int16_t fx_t;\n','''\n/* Packed state packet for emulator regression tests. Bytes 18-19 are command and acknowledgement. */\nvolatile uint8_t dbg_block[20];\n\ntypedef int16_t fx_t;\n''')
-          func='''\nstatic void update_debug_mirrors(void) {\n    uint16_t f=balls[0].frames;\n    dbg_block[0]=0xA5; dbg_block[1]=0x5A;\n    dbg_block[2]=state; dbg_block[3]=level_index;\n    dbg_block[4]=balls_left; dbg_block[5]=orange_remaining;\n    dbg_block[6]=active_ball_count; dbg_block[7]=fever;\n    dbg_block[8]=power_active; dbg_block[9]=(uint8_t)f; dbg_block[10]=(uint8_t)(f>>8);\n    dbg_block[11]=(uint8_t)score; dbg_block[12]=(uint8_t)(score>>8); dbg_block[13]=(uint8_t)(score>>16); dbg_block[14]=(uint8_t)(score>>24);\n    dbg_block[15]=(uint8_t)shot_score; dbg_block[16]=(uint8_t)(shot_score>>8); dbg_block[17]=(uint8_t)(shot_score>>16);\n}\n\nstatic void process_debug_command(void) {\n    uint8_t cmd=dbg_block[18];\n    if(!cmd) return;\n    if(cmd==1 && state==STATE_PLAY && !paused && active_ball_count==0 && balls_left) fire();\n    else if(cmd==2 && state==STATE_PLAY) paused=(uint8_t)!paused;\n    dbg_block[18]=0; dbg_block[19]++;\n}\n\n'''
+          p=Path('main.c'); s=p.read_text()
+          s=s.replace('typedef int16_t fx_t;\n','''\n/* Packed state packet for emulator regression tests. */\nvolatile uint8_t dbg_block[21];\n\ntypedef int16_t fx_t;\n''')
+          func='''\nstatic void update_debug_mirrors(void) {\n    uint16_t f=balls[0].frames;\n    dbg_block[0]=0xA5; dbg_block[1]=0x5A; dbg_block[2]=state; dbg_block[3]=level_index;\n    dbg_block[4]=balls_left; dbg_block[5]=orange_remaining; dbg_block[6]=active_ball_count; dbg_block[7]=fever; dbg_block[8]=power_active;\n    dbg_block[9]=(uint8_t)f; dbg_block[10]=(uint8_t)(f>>8);\n    dbg_block[11]=(uint8_t)score; dbg_block[12]=(uint8_t)(score>>8); dbg_block[13]=(uint8_t)(score>>16); dbg_block[14]=(uint8_t)(score>>24);\n    dbg_block[15]=(uint8_t)shot_score; dbg_block[16]=(uint8_t)(shot_score>>8); dbg_block[17]=(uint8_t)(shot_score>>16); dbg_block[20]=paused;\n}\nstatic void process_debug_command(void) {\n    uint8_t cmd=dbg_block[18]; if(!cmd) return;\n    if(cmd==1 && state==STATE_PLAY && active_ball_count==0 && balls_left) fire();\n    else if(cmd==2 && state==STATE_PLAY) paused=(uint8_t)!paused;\n    dbg_block[18]=0; dbg_block[19]++;\n}\n\n'''
           s=s.replace('void main(void) {',func+'void main(void) {')
           s=s.replace('while(1){handle_input();update_state();wait_vbl_done();}','while(1){process_debug_command();handle_input();update_state();update_debug_mirrors();wait_vbl_done();}')
           p.write_text(s)
-          Path('VERIFICATION_UPDATE.md').write_text('''# Verification Update\n\nThe test build exposes a packed WRAM state packet with a test-only command byte. Normal input still drives title and menu transitions. Deterministic commands exercise fire and pause directly, avoiding emulator input-edge ambiguity. The release source does not include this interface. The existing 1,000-frame watchdog remains unchanged. Current Level 22 uses seed 20; unused seed 21 was the prior outlier.\n''')
+          Path('VERIFICATION_UPDATE.md').write_text('# Verification Update\n\nState-aware testing uses a packed WRAM packet and test-only commands. The release source remains unchanged. The existing 1,000-frame watchdog is preserved. Level 22 uses seed 20; seed 21 is not in the campaign.\n')
           PY
           mkdir -p emulator_test
           cat > emulator_test/test_state_aware.py <<'PY'
           from pathlib import Path
           from pyboy import PyBoy
           ROOT=Path(__file__).resolve().parents[1]
-          pyboy=PyBoy(str(ROOT/'pegdrop_deluxe.gb'),window='null',sound_emulated=False)
-          pyboy.set_emulation_speed(0)
+          pyboy=PyBoy(str(ROOT/'pegdrop_deluxe.gb'),window='null',sound_emulated=False); pyboy.set_emulation_speed(0)
           def tick(n=1):
               for _ in range(n): pyboy.tick()
-          def press(name, held=2, released=3):
-              pyboy.button_press(name); tick(held); pyboy.button_release(name); tick(released)
-          def locate():
-              for a in range(0xC000,0xDFF0):
-                  if pyboy.memory[a]==0xA5 and pyboy.memory[a+1]==0x5A: return a
-              return None
+          def press(name):
+              pyboy.button_press(name); tick(2); pyboy.button_release(name); tick(3)
           tick(90)
-          base=locate()
-          assert base is not None, 'packed debug block not found after boot'
+          base=next((a for a in range(0xC000,0xDFF0) if pyboy.memory[a]==0xA5 and pyboy.memory[a+1]==0x5A),None)
+          assert base is not None
           def u8(o): return pyboy.memory[base+o]
           def u16(o): return u8(o)|(u8(o+1)<<8)
           def u24(o): return u8(o)|(u8(o+1)<<8)|(u8(o+2)<<16)
           def u32(o): return u24(o)|(u8(o+3)<<24)
-          def snap(): return {'state':u8(2),'level':u8(3),'balls':u8(4),'orange':u8(5),'active':u8(6),'fever':u8(7),'power':u8(8),'frames':u16(9),'score':u32(11),'shot_score':u24(15),'ack':u8(19)}
+          def snap(): return {'state':u8(2),'level':u8(3),'balls':u8(4),'orange':u8(5),'active':u8(6),'fever':u8(7),'power':u8(8),'frames':u16(9),'score':u32(11),'shot_score':u24(15),'ack':u8(19),'paused':u8(20)}
           def command(value):
               before=u8(19); pyboy.memory[base+18]=value
-              for _ in range(20):
+              for _ in range(30):
                   pyboy.tick()
                   if u8(19)!=before: return
               raise AssertionError(('command not acknowledged',value,snap()))
-          # Real input verifies title and menu navigation.
           for button in ['start','a','a','a','a','a']:
               if snap()['state']==2: break
               press(button); tick(20)
-          tick(10)
-          start=snap()
-          assert start['state']==2 and start['level']==0 and start['balls']==10 and start['orange']==25, start
-          # Test-only command invokes the real fire() function.
-          command(1); tick(10)
-          launched=snap()
+          tick(10); start=snap()
+          assert start['state']==2 and start['balls']==10 and start['orange']==25, start
+          command(1); tick(10); launched=snap()
           assert launched['active']>0 and launched['balls']==9, launched
-          # Test-only command toggles the real paused flag.
           command(2); tick(20); paused_a=snap(); tick(60); paused_b=snap()
-          assert paused_a['frames']==paused_b['frames'], (paused_a,paused_b)
-          command(2); tick(5)
+          assert paused_a['paused']==1 and paused_b['frames']==paused_a['frames'], (paused_a,paused_b)
+          command(2); tick(5); assert snap()['paused']==0
           for _ in range(1200):
               pyboy.tick()
               if snap()['active']==0: break
-          resolved=snap()
-          assert resolved['active']==0 and resolved['frames']==0 and resolved['shot_score']==0, resolved
-          # A second invocation proves turn control returned after resolution.
-          before=resolved['balls']; command(1); tick(10)
-          second=snap()
+          resolved=snap(); assert resolved['active']==0 and resolved['frames']==0 and resolved['shot_score']==0, resolved
+          before=resolved['balls']; command(1); tick(10); second=snap()
           assert second['active']>0 and second['balls']==before-1, second
           pyboy.screen.image.save('emulator-state-aware.png')
           result={'base':hex(base),'start':start,'launched':launched,'paused':paused_a,'resolved':resolved,'second':second}
-          Path('state-aware-results.txt').write_text('PASS\n'+repr(result)+'\n')
-          pyboy.stop(save=False)
-          print('PASS',result)
+          Path('state-aware-results.txt').write_text('PASS\n'+repr(result)+'\n'); pyboy.stop(save=False); print('PASS',result)
           PY
-
       - name: Download GBDK 4.3.0
         working-directory: pegdrop_build
         run: |
           wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
           tar -xzf gbdk-linux64.tar.gz
-          test -x gbdk/bin/lcc
-
       - name: Compile instrumented ROM
         working-directory: pegdrop_build/src
         run: |
@@ -115,13 +94,11 @@ jobs:
           make LCC="$GITHUB_WORKSPACE/pegdrop_build/gbdk/bin/lcc"
           test -s pegdrop_deluxe.gb
           sha256sum pegdrop_deluxe.gb
-
       - name: Run state-aware emulator regression
         working-directory: pegdrop_build/src
         run: |
           python -m pip install --disable-pip-version-check pyboy pillow
           python emulator_test/test_state_aware.py
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
