@@ -29,7 +29,6 @@ jobs:
           p=Path('main.c')
           s=p.read_text()
 
-          # Remove fixed-address debug mirrors from playable build.
           if '/* Fixed WRAM debug mirrors' in s:
               a=s.index('/* Fixed WRAM debug mirrors')
               b=s.index('typedef int16_t fx_t;', a)
@@ -48,6 +47,7 @@ jobs:
               'static uint8_t prev_keys;',
               'static uint8_t prev_keys;\nstatic uint8_t screen_shake_timer;\nstatic uint32_t hud_score_cache;\nstatic uint8_t hud_level_cache,hud_balls_cache,hud_orange_cache,hud_label_cache,hud_force;'
           )
+          s=s.replace('static void set_tile(uint8_t x, uint8_t y, uint8_t t)', 'static void hide_all_sprites(void);\nstatic void set_tile(uint8_t x, uint8_t y, uint8_t t)', 1)
 
           s=s.replace(
               'static void clear_screen(void) { uint8_t x,y; fill_bkg_rect(0,0,20,18,0); if(_cpu==CGB_TYPE) for(y=0;y<18;y++) for(x=0;x<20;x++) set_bkg_attribute_xy(x,y,0); }',
@@ -58,13 +58,10 @@ jobs:
               'for(i=0;i<placed_pegs;i++) if(pegs[i].state && pegs[i].x==x && pegs[i].y==y) return 1;',
               'for(i=0;i<placed_pegs;i++) if(pegs[i].state) { int8_t dx=(int8_t)pegs[i].x-(int8_t)x,dy=(int8_t)pegs[i].y-(int8_t)y; if(dx>=-1&&dx<=1&&dy>=-1&&dy<=1)return 1; }'
           )
-
-          # Generate board data without drawing it behind menu/ready scenes.
           s=s.replace('    clear_screen();\n    placed_pegs=0;', '    placed_pegs=0;')
           s=s.replace('    assign_types();\n    for(i=0;i<peg_count;i++) draw_peg(&pegs[i]);', '    assign_types();')
           s=s.replace('pegs[k].type=PEG_PURPLE; draw_peg(&pegs[k]); break;', 'pegs[k].type=PEG_PURPLE; if(state==STATE_PLAY) draw_peg(&pegs[k]); break;')
 
-          # Add screen-shake triggers.
           marker='    if(p->type==PEG_GREEN) activate_power(b);'
           if marker in s:
               s=s.replace(marker, '    if(p->type==PEG_GREEN || p->type==PEG_PURPLE) screen_shake_timer=15;\n'+marker)
@@ -72,13 +69,11 @@ jobs:
           if award in s:
               s=s.replace(award, award+'\n    screen_shake_timer=30;', 1)
 
-          # Replace HUD with dirty-value updates and add atomic playfield redraw.
           hs=s.index('static void draw_hud(void) {')
           he=s.index('\n}\n\nstatic void hide_all_sprites', hs)+3
           hud='''static void draw_hud(void) {\n uint8_t label=(shot_label_timer?shot_label:SHOT_NONE);\n if(hud_force||hud_score_cache!=score){print_num(0,0,score,7);hud_score_cache=score;}\n if(hud_force||hud_level_cache!=(uint8_t)(level_index+1)){print_num(9,0,(uint32_t)(level_index+1),2);hud_level_cache=(uint8_t)(level_index+1);}\n if(hud_force||hud_balls_cache!=balls_left){print_num(13,0,balls_left,2);hud_balls_cache=balls_left;}\n if(hud_force||hud_orange_cache!=orange_remaining){print_num(17,0,orange_remaining,2);hud_orange_cache=orange_remaining;}\n if(hud_force||hud_label_cache!=label){fill_bkg_rect(0,1,20,1,0);if(label!=SHOT_NONE)print_at((uint8_t)((20-strlen(shot_label_text()))/2),1,shot_label_text());hud_label_cache=label;}\n hud_force=0;\n}\nstatic void draw_playfield(void){uint8_t i;begin_scene();for(i=0;i<peg_count;i++)if(pegs[i].state)draw_peg(&pegs[i]);invalidate_hud();draw_hud();end_scene();}\n'''
           s=s[:hs]+hud+s[he:]
 
-          # Make full scene redraws atomic.
           for name in ['show_title','show_map','show_chapter','show_ready','show_clear','show_fail','show_complete']:
               token='static void '+name+'(void) {'
               if token not in s: continue
@@ -86,12 +81,15 @@ jobs:
               pos=s.find('clear_screen(); hide_all_sprites();', st)
               if pos < 0: continue
               s=s[:pos]+'begin_scene();'+s[pos+len('clear_screen(); hide_all_sprites();'):]
-              depth=0
-              for j in range(st, len(s)):
-                  depth += (s[j]=='{')-(s[j]=='}')
-                  if depth==0 and j>st:
-                      s=s[:j]+'    end_scene();\n'+s[j:]
-                      break
+              brace=s.index('{', st)
+              depth=1
+              for j in range(brace+1, len(s)):
+                  if s[j]=='{': depth+=1
+                  elif s[j]=='}':
+                      depth-=1
+                      if depth==0:
+                          s=s[:j]+'    end_scene();\n'+s[j:]
+                          break
 
           s=s.replace(
               'else if(state==STATE_READY && (pressed&(J_A|J_START))) {state=STATE_PLAY; clear_screen(); {uint8_t i;for(i=0;i<peg_count;i++)draw_peg(&pegs[i]);}}',
@@ -102,12 +100,10 @@ jobs:
               'if(pressed&J_START) {paused=(uint8_t)!paused;if(paused)show_pause();else draw_playfield();}'
           )
 
-          # Add lightweight deterministic scroll-register shake.
           shake='''\nstatic void update_screen_shake(void) {\n    static const int8_t sx[8]={0,2,-2,1,-1,2,-1,0};\n    static const int8_t sy[8]={-1,1,2,-2,1,0,-1,2};\n    uint8_t phase;\n    if(screen_shake_timer){phase=(uint8_t)(screen_shake_timer&7u);SCX_REG=(uint8_t)sx[phase];SCY_REG=(uint8_t)sy[phase];screen_shake_timer--;}\n    else {SCX_REG=0;SCY_REG=0;}\n}\n'''
           mainpos=s.index('void main(void) {')
           s=s[:mainpos]+shake+s[mainpos:]
 
-          # Strip old debug updater if present.
           if 'static void update_debug_mirrors(void)' in s:
               x=s.index('static void update_debug_mirrors(void)')
               y=s.index('\nvoid main(void)', x)
@@ -115,7 +111,6 @@ jobs:
           s=s.replace('while(1){handle_input();update_state();update_debug_mirrors();wait_vbl_done();}', 'while(1){handle_input();update_state();update_screen_shake();wait_vbl_done();}')
           s=s.replace('while(1){handle_input();update_state();wait_vbl_done();}', 'while(1){handle_input();update_state();update_screen_shake();wait_vbl_done();}')
           s=s.replace('state=STATE_TITLE;show_title();DISPLAY_ON;', 'state=STATE_TITLE;show_title();')
-
           p.write_text(s)
           PY
 
@@ -160,6 +155,7 @@ jobs:
           python test_final.py
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: pegdrop-final-repair
           path: |
@@ -172,3 +168,4 @@ jobs:
             final/src/ROM_SHA256.txt
             final/src/PLAYTEST_RESULT.txt
             final/src/*.png
+          if-no-files-found: warn
