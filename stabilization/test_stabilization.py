@@ -11,7 +11,7 @@ def tick(n=1):
         p.tick()
 
 
-def press(key, held=2, released=10):
+def press(key, held=2, released=14):
     p.button_press(key)
     tick(held)
     p.button_release(key)
@@ -30,19 +30,21 @@ base = find_packet()
 
 
 def packet():
-    d = [p.memory[base + i] for i in range(32)]
+    d = [p.memory[base + i] for i in range(36)]
     return {
         'state': d[8], 'level': d[9], 'balls': d[10], 'orange': d[11],
         'active': d[12], 'shot_pegs': d[13], 'power': d[14],
         'fever': d[15], 'particles': d[16], 'paused': d[17],
-        'frames': d[18] | (d[19] << 8),
+        'frames0': d[18] | (d[19] << 8),
         'hits': d[20] | (d[21] << 8),
         'orange_hits': d[22] | (d[23] << 8),
         'music': d[24] | (d[25] << 8),
+        'ball0': d[30], 'ball1': d[31],
+        'frames1': d[32] | (d[33] << 8),
+        'fires': d[34] | (d[35] << 8),
     }
 
 
-# Navigate by observed state, never by assumed timing.
 for _ in range(12):
     state = packet()['state']
     if state == 2:
@@ -66,10 +68,9 @@ max_particles = 0
 start_hits = s['hits']
 start_oranges = s['orange_hits']
 shot_results = []
-
-# Broad angle sweep, returning to center between shots.
 angles = (0, 8, -16, 24, -12, 20, -28, 14)
 current_aim = 0
+
 for shot, target_aim in enumerate(angles):
     delta = target_aim - current_aim
     key = 'right' if delta > 0 else 'left'
@@ -78,7 +79,7 @@ for shot, target_aim in enumerate(angles):
     current_aim = target_aim
 
     before = packet()
-    press('a')
+    press('a', 2, 24)
     launched = False
     for _ in range(40):
         cur = packet()
@@ -89,22 +90,29 @@ for shot, target_aim in enumerate(angles):
         tick()
     assert launched, (shot, packet())
     after_launch = packet()
+    assert after_launch['fires'] == before['fires'] + 1, (before, after_launch)
     assert after_launch['balls'] == before['balls'] - 1, (before, after_launch)
     p.screen.image.save(f'stabilized-shot-{shot + 1}.png')
 
     resolved = False
-    peak_frames = 0
-    for _ in range(520):
+    peak0 = peak1 = 0
+    history = []
+    for frame in range(620):
         cur = packet()
         max_particles = max(max_particles, cur['particles'])
-        peak_frames = max(peak_frames, cur['frames'])
+        peak0 = max(peak0, cur['frames0'])
+        peak1 = max(peak1, cur['frames1'])
+        if frame % 60 == 0:
+            history.append(cur.copy())
+        assert cur['active'] == cur['ball0'] + cur['ball1'], cur
+        assert cur['fires'] == after_launch['fires'], cur
         if cur['active'] == 0:
             resolved = True
             break
         tick()
-    assert resolved, (shot, packet())
-    assert peak_frames <= 421, peak_frames
-    shot_results.append((shot, peak_frames, packet()['hits'], packet()['orange_hits']))
+    assert resolved, (shot, history, packet())
+    assert peak0 <= 421 and peak1 <= 421, (peak0, peak1, history)
+    shot_results.append((shot, peak0, peak1, packet()['hits'], packet()['orange_hits']))
     tick(30)
 
     if packet()['hits'] > start_hits and packet()['orange_hits'] > start_oranges:
@@ -117,8 +125,8 @@ assert end['orange_hits'] > start_oranges, (start_oranges, end)
 assert end['orange'] < 15, end
 assert max_particles > 0, max_particles
 assert ((end['music'] - music0) & 0xFFFF) > 100, (music0, end['music'])
-
 assert end['state'] == 2, end
+
 press('start')
 tick(20)
 assert packet()['paused'] == 1, packet()
