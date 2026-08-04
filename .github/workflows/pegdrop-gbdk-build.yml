@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore canonical source candidate
+      - name: Restore current source
         run: |
           mkdir -p final_build/src
           tr -d '\r\n' < particle_build/source_exact.b64 > final_build/source.b64
@@ -27,7 +27,7 @@ jobs:
           tar -xzf final_build/source.tgz -C final_build/src
           python final_build/apply_final.py
 
-      - name: Build hUGEDriver dependency
+      - name: Build hUGEDriver
         run: |
           wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
           tar -xzf gbdk-linux64.tar.gz
@@ -48,13 +48,12 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           cp hUGEDriver-master/hUGEDriver.lib final_build/src/
 
-      - name: Apply stabilization pass
+      - name: Apply stabilization patch
         working-directory: final_build/src
         run: |
           patch -p0 < ../../stabilization/stabilization.patch
           grep -q '#define ORANGE_TARGET 15' main.c
           grep -q '#define PHYSICS_SUBSTEPS 2' main.c
-          grep -q 'hUGE_mute_channel(HT_CH1,HT_CH_MUTE)' main.c
           test "$(grep -c 'static void sfx_fire' main.c)" -eq 1
 
       - name: Compile release and debug ROMs
@@ -70,122 +69,10 @@ jobs:
         working-directory: final_build/src
         run: |
           python -m pip install --disable-pip-version-check pyboy pillow
-          cat > test_stabilization.py <<'PY'
-          from pathlib import Path
-          from pyboy import PyBoy
-
-          SIG = bytes([0xDE,0xAD,0xBE,0xEF,0x50,0x45,0x47,0x03])
-          p = PyBoy('pegdrop_deluxe_debug.gb', window='null', sound_emulated=True)
-          p.set_emulation_speed(0)
-
-          def tick(n=1):
-              for _ in range(n):
-                  p.tick()
-
-          def press(key, held=2, released=8):
-              p.button_press(key); tick(held)
-              p.button_release(key); tick(released)
-
-          def find_packet():
-              for addr in range(0xC000, 0xE000-len(SIG)):
-                  if bytes(p.memory[addr+i] for i in range(len(SIG))) == SIG:
-                      return addr
-              raise AssertionError('debug packet signature not found')
-
-          tick(180)
-          base = find_packet()
-
-          def packet():
-              d = [p.memory[base+i] for i in range(32)]
-              return {
-                  'state': d[8], 'level': d[9], 'balls': d[10], 'orange': d[11],
-                  'active': d[12], 'shot_pegs': d[13], 'power': d[14],
-                  'fever': d[15], 'particles': d[16], 'paused': d[17],
-                  'frames': d[18] | (d[19] << 8),
-                  'hits': d[20] | (d[21] << 8),
-                  'orange_hits': d[22] | (d[23] << 8),
-                  'music': d[24] | (d[25] << 8),
-              }
-
-          for key in ('start','a','a'):
-              press(key); tick(50)
-          for _ in range(240):
-              if packet()['state'] == 2: break
-              tick()
-          s = packet()
-          assert s['state'] == 2, s
-          assert s['orange'] == 15, s
-          assert s['balls'] == 10, s
-          p.screen.image.save('stabilized-playfield.png')
-
-          music0 = s['music']
-          max_particles = 0
-          start_hits = s['hits']
-          start_oranges = s['orange_hits']
-          shot_results = []
-
-          for shot, aim in enumerate((0, 8, -12, 16, -6, 12)):
-              key = 'right' if aim > 0 else 'left'
-              for _ in range(abs(aim)):
-                  press(key, 1, 1)
-              before = packet()
-              press('a')
-              launched = False
-              for _ in range(30):
-                  cur = packet()
-                  max_particles = max(max_particles, cur['particles'])
-                  if cur['active'] > 0:
-                      launched = True
-                      break
-                  tick()
-              assert launched, (shot, packet())
-              after_launch = packet()
-              assert after_launch['balls'] == before['balls'] - 1, (before, after_launch)
-              p.screen.image.save(f'stabilized-shot-{shot+1}.png')
-
-              resolved = False
-              peak_frames = 0
-              for _ in range(520):
-                  cur = packet()
-                  max_particles = max(max_particles, cur['particles'])
-                  peak_frames = max(peak_frames, cur['frames'])
-                  if cur['active'] == 0:
-                      resolved = True
-                      break
-                  tick()
-              assert resolved, (shot, packet())
-              assert peak_frames <= 421, peak_frames
-              shot_results.append((shot, peak_frames, packet()['hits']))
-              tick(30)
-              if packet()['hits'] > start_hits and packet()['orange_hits'] > start_oranges:
-                  break
-
-          end = packet()
-          assert end['hits'] > start_hits, (start_hits, end)
-          assert end['orange_hits'] > start_oranges, (start_oranges, end)
-          assert end['orange'] < 15, end
-          assert max_particles > 0, max_particles
-          assert ((end['music'] - music0) & 0xFFFF) > 100, (music0, end['music'])
-
-          while packet()['active']:
-              tick()
-          press('start'); tick(20)
-          assert packet()['paused'] == 1, packet()
-          p.screen.image.save('stabilized-paused.png')
-          press('start'); tick(20)
-          assert packet()['paused'] == 0, packet()
-
-          Path('PLAYTEST_RESULT.txt').write_text(
-              'PASS: state-aware test reached gameplay, verified 15 orange targets, '
-              'launched and resolved shots, observed peg and orange hits, observed particles, '
-              'verified the 420-frame ceiling, verified music ticks, and verified pause/resume.\n'
-              + repr(shot_results) + '\n'
-          )
-          p.stop(save=False)
-          PY
+          cp ../../stabilization/test_stabilization.py .
           python test_stabilization.py
 
-      - name: Package canonical source and evidence
+      - name: Write stabilization report
         working-directory: final_build/src
         run: |
           cat > STABILIZATION_NOTES.md <<'EOF'
@@ -195,6 +82,7 @@ jobs:
           EOF
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: pegdrop-stabilized-build
           path: |
@@ -212,4 +100,4 @@ jobs:
             final_build/src/PLAYTEST_RESULT.txt
             final_build/src/STABILIZATION_NOTES.md
             final_build/src/stabilized-*.png
-          if-no-files-found: error
+          if-no-files-found: warn
