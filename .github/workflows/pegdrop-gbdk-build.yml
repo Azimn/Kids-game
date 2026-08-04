@@ -48,10 +48,11 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           cp hUGEDriver-master/hUGEDriver.lib final_build/src/
 
-      - name: Apply stabilization patch
+      - name: Apply stabilization patches
         working-directory: final_build/src
         run: |
           patch -p0 < ../../stabilization/stabilization.patch
+          patch -p0 < ../../stabilization/diagnostic.patch
           grep -q '#define ORANGE_TARGET 15' main.c
           grep -q '#define PHYSICS_SUBSTEPS 2' main.c
           test "$(grep -c 'static void sfx_fire' main.c)" -eq 1
