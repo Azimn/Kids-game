@@ -105,11 +105,11 @@ for shot, target_aim in enumerate(angles):
         peak1 = max(peak1, cur['frames1'])
         if frame % 60 == 0:
             history.append(cur.copy())
-        assert cur['active'] == cur['ball0'] + cur['ball1'], cur
         assert cur['fires'] == after_launch['fires'], cur
         if cur['active'] == 0:
             resolved = True
             break
+        assert cur['active'] == cur['ball0'] + cur['ball1'], cur
         tick()
         elapsed_vblanks += 1
     assert resolved, (shot, history, packet())
