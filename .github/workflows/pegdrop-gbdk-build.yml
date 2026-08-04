@@ -23,7 +23,6 @@ jobs:
         run: |
           mkdir -p particle_build/src
           for f in particle_build/chunk00.b64 particle_build/chunk01.b64 particle_build/chunk02.b64; do tr -d '\r\n' < "$f"; done > particle_build/source.b64
-          echo 'bce3eaf97efee1f2b5fbbd71c16f8b05af59facc0ecd70addd95040c81039614  particle_build/source.b64' | sha256sum -c -
           base64 -d particle_build/source.b64 > particle_build/source.tgz
           echo '770230156d2483b734845b8a9781f5ba6e2df812f000142f8a97497ef3bb6944  particle_build/source.tgz' | sha256sum -c -
           tar -xzf particle_build/source.tgz -C particle_build/src
