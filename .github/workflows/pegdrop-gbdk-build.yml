@@ -5,11 +5,13 @@ on:
     branches: [pegdrop-gbdk-build]
     paths:
       - '.github/workflows/pegdrop-gbdk-build.yml'
+      - 'final_build/**'
       - 'particle_build/**'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/pegdrop-gbdk-build.yml'
+      - 'final_build/**'
       - 'particle_build/**'
   workflow_dispatch:
 
@@ -19,49 +21,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore current particle build source
+      - name: Restore current source and apply final changes
         run: |
           mkdir -p final_build/src
           tr -d '\r\n' < particle_build/source_exact.b64 > final_build/source.b64
           base64 -d final_build/source.b64 > final_build/source.tgz
           echo '770230156d2483b734845b8a9781f5ba6e2df812f000142f8a97497ef3bb6944  final_build/source.tgz' | sha256sum -c -
           tar -xzf final_build/source.tgz -C final_build/src
+          python final_build/apply_final.py
 
-      - name: Add flashing HUD labels and hUGEDriver hooks
-        working-directory: final_build/src
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p=Path('main.c'); s=p.read_text()
-          s=s.replace('#include "tiles.h"', '#include "tiles.h"\n#include "hUGEDriver.h"')
-          pos=s.index('typedef int16_t fx_t;')
-          s=s[:pos]+'extern const hUGESong_t sample_song;\n\n'+s[pos:]
-          s=s.replace('static uint8_t hud_level_cache,hud_balls_cache,hud_orange_cache,hud_label_cache,hud_force;', 'static uint8_t hud_level_cache,hud_balls_cache,hud_orange_cache,hud_label_cache,hud_label_visible_cache,hud_force;')
-          s=s.replace('static void invalidate_hud(void) { hud_force=1; hud_label_cache=255; }', 'static void invalidate_hud(void) { hud_force=1; hud_label_cache=255; hud_label_visible_cache=255; }')
-          s=s.replace('static void sfx_fail(void) { tone(0x220,0xC3); }', '''static void sfx_fail(void) { tone(0x220,0xC3); }\nstatic void sfx_style_bonus(uint8_t label) {\n    if(label==SHOT_SUPER) tone(0x7D0,0xF1);\n    else if(label==SHOT_LONG) tone(0x790,0xE1);\n}''')
-          s=s.replace('if((uint16_t)(dx*dx+dy*dy)>100) { shot_score+=25000; shot_label=SHOT_LONG; shot_label_timer=90; }', 'if((uint16_t)(dx*dx+dy*dy)>100) { shot_score+=25000; shot_label=SHOT_LONG; shot_label_timer=90; sfx_style_bonus(SHOT_LONG); }')
-          s=s.replace('else if(shot_pegs>=15) { shot_label=SHOT_SUPER; shot_label_timer=110; }', 'else if(shot_pegs>=15) { shot_label=SHOT_SUPER; shot_label_timer=110; sfx_style_bonus(SHOT_SUPER); }')
-          hs=s.index('static void draw_hud(void) {')
-          he=s.index('\n}\nstatic void draw_playfield',hs)+2
-          hud='''static void draw_hud(void) {\n uint8_t label=(shot_label_timer?shot_label:SHOT_NONE);\n uint8_t label_visible=(uint8_t)(shot_label_timer && ((shot_label_timer & 8u)!=0u));\n if(hud_force||hud_score_cache!=score){print_num(0,0,score,7);hud_score_cache=score;}\n if(hud_force||hud_level_cache!=(uint8_t)(level_index+1)){print_num(9,0,(uint32_t)(level_index+1),2);hud_level_cache=(uint8_t)(level_index+1);}\n if(hud_force||hud_balls_cache!=balls_left){print_num(13,0,balls_left,2);hud_balls_cache=balls_left;}\n if(hud_force||hud_orange_cache!=orange_remaining){print_num(17,0,orange_remaining,2);hud_orange_cache=orange_remaining;}\n if(hud_force||hud_label_cache!=label||hud_label_visible_cache!=label_visible){\n     fill_bkg_rect(0,1,20,1,0);\n     if(label!=SHOT_NONE && label_visible) print_at((uint8_t)((20-strlen(shot_label_text()))/2),1,shot_label_text());\n     hud_label_cache=label;\n     hud_label_visible_cache=label_visible;\n }\n hud_force=0;\n}'''
-          s=s[:hs]+hud+s[he:]
-          s=s.replace('SHOW_BKG;SHOW_SPRITES;SPRITES_8x8;apply_palettes();sound_init();state=STATE_TITLE;show_title();', '''SHOW_BKG;SHOW_SPRITES;SPRITES_8x8;apply_palettes();sound_init();\n    __critical { hUGE_init(&sample_song); add_VBL(hUGE_dosound); }\n    state=STATE_TITLE;show_title();''')
-          p.write_text(s)
-          Path('Makefile').write_text('''LCC ?= lcc\nTARGET := pegdrop_deluxe.gb\nHUGE_LIB := hUGEDriver.lib\nSOURCES := main.c tiles.c sample_song.c\nHEADERS := tiles.h hUGEDriver.h campaign_data.h\n\nall: $(TARGET)\n\n$(TARGET): $(SOURCES) $(HEADERS) $(HUGE_LIB)\n\t$(LCC) -I. -Wm-yC -Wm-yn"PEG DROP DX" -Wm-yt0x1B -Wl-l$(HUGE_LIB) -o $@ $(SOURCES)\n\nclean:\n\trm -f $(TARGET) *.asm *.ihx *.lk *.lst *.map *.noi *.o *.sym\n\n.PHONY: all clean\n''')
-          Path('AUDIO_AND_HUD_UPDATE.md').write_text('Style labels flash every eight frames. SUPER SHOT and LONG SHOT play confirmation tones. hUGEDriver is initialized and serviced through add_VBL(hUGE_dosound). wait_vbl_done remains in the main loop. The bundled sample song is a public-domain placeholder.\n')
-          PY
-
-      - name: Download GBDK and hUGEDriver
+      - name: Download toolchains and build hUGEDriver
         run: |
           wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
           tar -xzf gbdk-linux64.tar.gz
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq rgbds unzip
+          wget -q https://github.com/gbdev/rgbds/releases/download/v0.8.0/rgbds-0.8.0-linux-x86_64.tar.xz
+          mkdir -p rgbds
+          tar -xJf rgbds-0.8.0-linux-x86_64.tar.xz -C rgbds
+          chmod +x rgbds/rgbasm rgbds/rgblink rgbds/rgbfix rgbds/rgbgfx
           wget -q https://github.com/SuperDisk/hUGEDriver/archive/refs/heads/master.zip -O huge.zip
           unzip -q huge.zip
           cp hUGEDriver-master/include/hUGEDriver.h final_build/src/
           cp hUGEDriver-master/gbdk_example/src/sample_song.c final_build/src/
-          make -C hUGEDriver-master/gbdk_example GBDK_HOME="$GITHUB_WORKSPACE/gbdk" RGBDS_HOME=/usr/bin
+          make -C hUGEDriver-master/gbdk_example GBDK_HOME="$GITHUB_WORKSPACE/gbdk" RGBDS_HOME="$GITHUB_WORKSPACE/rgbds"
           cp hUGEDriver-master/gbdk_example/lib/hUGEDriver.lib final_build/src/
 
       - name: Compile final ROM
