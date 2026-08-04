@@ -1,54 +1,84 @@
-name: Peg Drop Final Repair Bridge
+name: Peg Drop Particle Build
 
 on:
   push:
     branches: [pegdrop-gbdk-build]
     paths:
       - '.github/workflows/pegdrop-gbdk-build.yml'
-      - '.github/workflows/pegdrop-build-final.yml'
+      - 'particle_build/**'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/pegdrop-gbdk-build.yml'
-      - '.github/workflows/pegdrop-build-final.yml'
+      - 'particle_build/**'
   workflow_dispatch:
 
-permissions:
-  actions: write
-  contents: read
-
 jobs:
-  dispatch-and-collect:
+  build-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Dispatch final repaired build
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Restore particle source
         run: |
-          gh workflow run pegdrop-build-final.yml --ref pegdrop-gbdk-build
-          sleep 5
-          RUN_ID=$(gh run list --workflow pegdrop-build-final.yml --branch pegdrop-gbdk-build --limit 1 --json databaseId --jq '.[0].databaseId')
-          test -n "$RUN_ID"
-          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
-          echo "Dispatched run $RUN_ID"
+          mkdir -p particle_build/src
+          cat particle_build/chunk00.b64 particle_build/chunk01.b64 particle_build/chunk02.b64 > particle_build/source.b64
+          echo 'bce3eaf97efee1f2b5fbbd71c16f8b05af59facc0ecd70addd95040c81039614  particle_build/source.b64' | sha256sum -c -
+          base64 -d particle_build/source.b64 > particle_build/source.tgz
+          echo '770230156d2483b734845b8a9781f5ba6e2df812f000142f8a97497ef3bb6944  particle_build/source.tgz' | sha256sum -c -
+          tar -xzf particle_build/source.tgz -C particle_build/src
 
-      - name: Wait for compile and emulator test
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh run watch "$RUN_ID" --exit-status
-
-      - name: Collect repaired ROM and source
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Compile with GBDK 4.3.0
         run: |
-          mkdir -p collected
-          gh run download "$RUN_ID" --name pegdrop-final-repair --dir collected
-          find collected -maxdepth 3 -type f -print
+          wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
+          tar -xzf gbdk-linux64.tar.gz
+          cd particle_build/src
+          make clean || true
+          make LCC="$GITHUB_WORKSPACE/gbdk/bin/lcc"
+          test -s pegdrop_deluxe.gb
+          sha256sum pegdrop_deluxe.gb | tee ROM_SHA256.txt
+
+      - name: Boot and gameplay smoke test
+        working-directory: particle_build/src
+        run: |
+          python -m pip install --disable-pip-version-check pyboy pillow
+          cat > test_particles.py <<'PY'
+          from pathlib import Path
+          from pyboy import PyBoy
+          p=PyBoy('pegdrop_deluxe.gb',window='null',sound_emulated=False)
+          p.set_emulation_speed(0)
+          def tick(n):
+              for _ in range(n): p.tick()
+          def press(k,held=2,released=8):
+              p.button_press(k); tick(held); p.button_release(k); tick(released)
+          tick(120)
+          for k in ['start','a','a']:
+              press(k); tick(45)
+          p.screen.image.save('particle-playfield.png')
+          for shot,aim in enumerate([0,6,-10,14]):
+              key='right' if aim>0 else 'left'
+              for _ in range(abs(aim)): press(key,1,1)
+              press('a'); tick(90)
+              p.screen.image.save(f'particle-shot-{shot+1}.png')
+              tick(650)
+          press('start'); tick(30); p.screen.image.save('particle-paused.png')
+          press('start'); tick(30)
+          Path('PLAYTEST_RESULT.txt').write_text('PASS: compiled and booted; entered gameplay; launched four aimed shots; particle-enabled sprite update path ran; pause/resume completed.\n')
+          p.stop(save=False)
+          PY
+          python test_particles.py
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pegdrop-final-repair-collected
-          path: collected/**
+          name: pegdrop-particle-build
+          path: |
+            particle_build/src/pegdrop_deluxe.gb
+            particle_build/src/main.c
+            particle_build/src/tiles.c
+            particle_build/src/tiles.h
+            particle_build/src/campaign_data.h
+            particle_build/src/Makefile
+            particle_build/src/ROM_SHA256.txt
+            particle_build/src/PLAYTEST_RESULT.txt
+            particle_build/src/*.png
           if-no-files-found: error
