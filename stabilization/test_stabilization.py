@@ -97,7 +97,8 @@ for shot, target_aim in enumerate(angles):
     resolved = False
     peak0 = peak1 = 0
     history = []
-    for frame in range(620):
+    elapsed_vblanks = 0
+    for frame in range(700):
         cur = packet()
         max_particles = max(max_particles, cur['particles'])
         peak0 = max(peak0, cur['frames0'])
@@ -110,9 +111,18 @@ for shot, target_aim in enumerate(angles):
             resolved = True
             break
         tick()
+        elapsed_vblanks += 1
     assert resolved, (shot, history, packet())
-    assert peak0 <= 421 and peak1 <= 421, (peak0, peak1, history)
-    shot_results.append((shot, peak0, peak1, packet()['hits'], packet()['orange_hits']))
+    assert peak0 <= 241 and peak1 <= 241, (peak0, peak1, history)
+    physics_updates = max(peak0, peak1)
+    assert physics_updates * 100 >= elapsed_vblanks * 40, (
+        'gameplay below 40 percent of VBlank rate', physics_updates,
+        elapsed_vblanks, history
+    )
+    shot_results.append((
+        shot, peak0, peak1, elapsed_vblanks,
+        packet()['hits'], packet()['orange_hits']
+    ))
     tick(30)
 
     if packet()['hits'] > start_hits and packet()['orange_hits'] > start_oranges:
@@ -138,7 +148,8 @@ assert packet()['paused'] == 0, packet()
 Path('PLAYTEST_RESULT.txt').write_text(
     'PASS: state-aware test reached gameplay, verified 15 orange targets, '
     'launched and resolved shots, observed peg and orange hits, observed particles, '
-    'verified the 420-frame ceiling, verified music ticks, and verified pause/resume.\n'
+    'verified the 240-update ceiling, verified at least 40 percent VBlank throughput, '
+    'verified music ticks, and verified pause/resume.\n'
     + repr(shot_results) + '\n'
 )
 p.stop(save=False)
