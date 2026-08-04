@@ -52,6 +52,7 @@ jobs:
         working-directory: final_build/src
         run: |
           patch -p0 < ../../stabilization/stabilization.patch
+          patch -p0 < ../../stabilization/performance.patch
           patch -p0 < ../../stabilization/diagnostic.patch
           grep -q '#define ORANGE_TARGET 15' main.c
           grep -q '#define PHYSICS_SUBSTEPS 2' main.c
@@ -78,8 +79,9 @@ jobs:
         run: |
           cat > STABILIZATION_NOTES.md <<'EOF'
           Stabilization pass: 15 orange targets, retuned multipliers, two-step physics,
-          nearest collision selection, explicit separation, stall handling, 420-frame cap,
-          channel-1 SFX ownership, and versioned debug-state assertions.
+          nearest collision selection with 16-bit broad phase, division-free reflection
+          and separation, stall handling, 420-frame cap, channel-1 SFX ownership,
+          and versioned debug-state assertions.
           EOF
 
       - uses: actions/upload-artifact@v4
