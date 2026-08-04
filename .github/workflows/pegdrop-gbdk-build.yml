@@ -43,9 +43,11 @@ jobs:
           unzip -q huge.zip
           cp hUGEDriver-master/include/hUGEDriver.h final_build/src/
           cp hUGEDriver-master/gbdk_example/src/sample_song.c final_build/src/
-          "$GITHUB_WORKSPACE/rgbds/rgbasm" -DGBDK -o hUGEDriver-master/hUGEDriver.obj hUGEDriver-master/hUGEDriver.asm
-          python hUGEDriver-master/tools/rgb2sdas.py -o hUGEDriver-master/hUGEDriver.o hUGEDriver-master/hUGEDriver.obj
-          "$GITHUB_WORKSPACE/gbdk/bin/sdar" -ru hUGEDriver-master/hUGEDriver.lib hUGEDriver-master/hUGEDriver.o
+          cd hUGEDriver-master
+          "$GITHUB_WORKSPACE/rgbds/rgbasm" -DGBDK -o hUGEDriver.obj hUGEDriver.asm
+          python tools/rgb2sdas.py -o hUGEDriver.o hUGEDriver.obj
+          "$GITHUB_WORKSPACE/gbdk/bin/sdar" -ru hUGEDriver.lib hUGEDriver.o
+          cd "$GITHUB_WORKSPACE"
           cp hUGEDriver-master/hUGEDriver.lib final_build/src/
 
       - name: Compile final ROM
