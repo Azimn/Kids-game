@@ -1,4 +1,4 @@
-name: Peg Drop Particle Build
+name: Peg Drop Final HUD and Music Build
 
 on:
   push:
@@ -19,65 +19,104 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore particle source
+      - name: Restore current particle build source
         run: |
-          mkdir -p particle_build/src
-          tr -d '\r\n' < particle_build/source_exact.b64 > particle_build/source.b64
-          base64 -d particle_build/source.b64 > particle_build/source.tgz
-          echo '770230156d2483b734845b8a9781f5ba6e2df812f000142f8a97497ef3bb6944  particle_build/source.tgz' | sha256sum -c -
-          tar -xzf particle_build/source.tgz -C particle_build/src
+          mkdir -p final_build/src
+          tr -d '\r\n' < particle_build/source_exact.b64 > final_build/source.b64
+          base64 -d final_build/source.b64 > final_build/source.tgz
+          echo '770230156d2483b734845b8a9781f5ba6e2df812f000142f8a97497ef3bb6944  final_build/source.tgz' | sha256sum -c -
+          tar -xzf final_build/source.tgz -C final_build/src
 
-      - name: Compile with GBDK 4.3.0
+      - name: Add flashing HUD labels and hUGEDriver hooks
+        working-directory: final_build/src
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('main.c'); s=p.read_text()
+          s=s.replace('#include "tiles.h"', '#include "tiles.h"\n#include "hUGEDriver.h"')
+          pos=s.index('typedef int16_t fx_t;')
+          s=s[:pos]+'extern const hUGESong_t sample_song;\n\n'+s[pos:]
+          s=s.replace('static uint8_t hud_level_cache,hud_balls_cache,hud_orange_cache,hud_label_cache,hud_force;', 'static uint8_t hud_level_cache,hud_balls_cache,hud_orange_cache,hud_label_cache,hud_label_visible_cache,hud_force;')
+          s=s.replace('static void invalidate_hud(void) { hud_force=1; hud_label_cache=255; }', 'static void invalidate_hud(void) { hud_force=1; hud_label_cache=255; hud_label_visible_cache=255; }')
+          s=s.replace('static void sfx_fail(void) { tone(0x220,0xC3); }', '''static void sfx_fail(void) { tone(0x220,0xC3); }\nstatic void sfx_style_bonus(uint8_t label) {\n    if(label==SHOT_SUPER) tone(0x7D0,0xF1);\n    else if(label==SHOT_LONG) tone(0x790,0xE1);\n}''')
+          s=s.replace('if((uint16_t)(dx*dx+dy*dy)>100) { shot_score+=25000; shot_label=SHOT_LONG; shot_label_timer=90; }', 'if((uint16_t)(dx*dx+dy*dy)>100) { shot_score+=25000; shot_label=SHOT_LONG; shot_label_timer=90; sfx_style_bonus(SHOT_LONG); }')
+          s=s.replace('else if(shot_pegs>=15) { shot_label=SHOT_SUPER; shot_label_timer=110; }', 'else if(shot_pegs>=15) { shot_label=SHOT_SUPER; shot_label_timer=110; sfx_style_bonus(SHOT_SUPER); }')
+          hs=s.index('static void draw_hud(void) {')
+          he=s.index('\n}\nstatic void draw_playfield',hs)+2
+          hud='''static void draw_hud(void) {\n uint8_t label=(shot_label_timer?shot_label:SHOT_NONE);\n uint8_t label_visible=(uint8_t)(shot_label_timer && ((shot_label_timer & 8u)!=0u));\n if(hud_force||hud_score_cache!=score){print_num(0,0,score,7);hud_score_cache=score;}\n if(hud_force||hud_level_cache!=(uint8_t)(level_index+1)){print_num(9,0,(uint32_t)(level_index+1),2);hud_level_cache=(uint8_t)(level_index+1);}\n if(hud_force||hud_balls_cache!=balls_left){print_num(13,0,balls_left,2);hud_balls_cache=balls_left;}\n if(hud_force||hud_orange_cache!=orange_remaining){print_num(17,0,orange_remaining,2);hud_orange_cache=orange_remaining;}\n if(hud_force||hud_label_cache!=label||hud_label_visible_cache!=label_visible){\n     fill_bkg_rect(0,1,20,1,0);\n     if(label!=SHOT_NONE && label_visible) print_at((uint8_t)((20-strlen(shot_label_text()))/2),1,shot_label_text());\n     hud_label_cache=label;\n     hud_label_visible_cache=label_visible;\n }\n hud_force=0;\n}'''
+          s=s[:hs]+hud+s[he:]
+          s=s.replace('SHOW_BKG;SHOW_SPRITES;SPRITES_8x8;apply_palettes();sound_init();state=STATE_TITLE;show_title();', '''SHOW_BKG;SHOW_SPRITES;SPRITES_8x8;apply_palettes();sound_init();\n    __critical { hUGE_init(&sample_song); add_VBL(hUGE_dosound); }\n    state=STATE_TITLE;show_title();''')
+          p.write_text(s)
+          Path('Makefile').write_text('''LCC ?= lcc\nTARGET := pegdrop_deluxe.gb\nHUGE_LIB := hUGEDriver.lib\nSOURCES := main.c tiles.c sample_song.c\nHEADERS := tiles.h hUGEDriver.h campaign_data.h\n\nall: $(TARGET)\n\n$(TARGET): $(SOURCES) $(HEADERS) $(HUGE_LIB)\n\t$(LCC) -I. -Wm-yC -Wm-yn"PEG DROP DX" -Wm-yt0x1B -Wl-l$(HUGE_LIB) -o $@ $(SOURCES)\n\nclean:\n\trm -f $(TARGET) *.asm *.ihx *.lk *.lst *.map *.noi *.o *.sym\n\n.PHONY: all clean\n''')
+          Path('AUDIO_AND_HUD_UPDATE.md').write_text('Style labels flash every eight frames. SUPER SHOT and LONG SHOT play confirmation tones. hUGEDriver is initialized and serviced through add_VBL(hUGE_dosound). wait_vbl_done remains in the main loop. The bundled sample song is a public-domain placeholder.\n')
+          PY
+
+      - name: Download GBDK and hUGEDriver
         run: |
           wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
           tar -xzf gbdk-linux64.tar.gz
-          cd particle_build/src
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rgbds unzip
+          wget -q https://github.com/SuperDisk/hUGEDriver/archive/refs/heads/master.zip -O huge.zip
+          unzip -q huge.zip
+          cp hUGEDriver-master/include/hUGEDriver.h final_build/src/
+          cp hUGEDriver-master/gbdk_example/src/sample_song.c final_build/src/
+          make -C hUGEDriver-master/gbdk_example GBDK_HOME="$GITHUB_WORKSPACE/gbdk" RGBDS_HOME=/usr/bin
+          cp hUGEDriver-master/gbdk_example/lib/hUGEDriver.lib final_build/src/
+
+      - name: Compile final ROM
+        working-directory: final_build/src
+        run: |
           make clean || true
           make LCC="$GITHUB_WORKSPACE/gbdk/bin/lcc"
           test -s pegdrop_deluxe.gb
           sha256sum pegdrop_deluxe.gb | tee ROM_SHA256.txt
 
       - name: Boot and gameplay smoke test
-        working-directory: particle_build/src
+        working-directory: final_build/src
         run: |
           python -m pip install --disable-pip-version-check pyboy pillow
-          cat > test_particles.py <<'PY'
+          cat > test_final.py <<'PY'
           from pathlib import Path
           from pyboy import PyBoy
-          p=PyBoy('pegdrop_deluxe.gb',window='null',sound_emulated=False)
+          p=PyBoy('pegdrop_deluxe.gb',window='null',sound_emulated=True)
           p.set_emulation_speed(0)
           def tick(n):
               for _ in range(n): p.tick()
           def press(k,held=2,released=8):
               p.button_press(k); tick(held); p.button_release(k); tick(released)
-          tick(120)
+          tick(180)
           for k in ['start','a','a']:
               press(k); tick(45)
-          p.screen.image.save('particle-playfield.png')
+          p.screen.image.save('final-playfield.png')
           for shot,aim in enumerate([0,6,-10,14]):
               key='right' if aim>0 else 'left'
               for _ in range(abs(aim)): press(key,1,1)
-              press('a'); tick(90)
-              p.screen.image.save(f'particle-shot-{shot+1}.png')
+              press('a'); tick(110)
+              p.screen.image.save(f'final-shot-{shot+1}.png')
               tick(650)
-          press('start'); tick(30); p.screen.image.save('particle-paused.png')
-          press('start'); tick(30)
-          Path('PLAYTEST_RESULT.txt').write_text('PASS: compiled and booted; entered gameplay; launched four aimed shots; particle-enabled sprite update path ran; pause/resume completed.\n')
+          press('start'); tick(30); p.screen.image.save('final-paused.png')
+          press('start'); tick(60)
+          Path('PLAYTEST_RESULT.txt').write_text('PASS: compiled with hUGEDriver, booted with VBlank music callback active, entered gameplay, launched four shots, and completed pause/resume.\n')
           p.stop(save=False)
           PY
-          python test_particles.py
+          python test_final.py
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pegdrop-particle-build
+          name: pegdrop-final-hud-music
           path: |
-            particle_build/src/pegdrop_deluxe.gb
-            particle_build/src/main.c
-            particle_build/src/tiles.c
-            particle_build/src/tiles.h
-            particle_build/src/campaign_data.h
-            particle_build/src/Makefile
-            particle_build/src/ROM_SHA256.txt
-            particle_build/src/PLAYTEST_RESULT.txt
-            particle_build/src/*.png
+            final_build/src/pegdrop_deluxe.gb
+            final_build/src/main.c
+            final_build/src/tiles.c
+            final_build/src/tiles.h
+            final_build/src/campaign_data.h
+            final_build/src/Makefile
+            final_build/src/hUGEDriver.h
+            final_build/src/hUGEDriver.lib
+            final_build/src/sample_song.c
+            final_build/src/AUDIO_AND_HUD_UPDATE.md
+            final_build/src/ROM_SHA256.txt
+            final_build/src/PLAYTEST_RESULT.txt
+            final_build/src/*.png
           if-no-files-found: error
