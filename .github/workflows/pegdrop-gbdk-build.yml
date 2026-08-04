@@ -42,6 +42,7 @@ jobs:
           unzip -q huge.zip
           cp hUGEDriver-master/include/hUGEDriver.h final_build/src/
           cp hUGEDriver-master/gbdk_example/src/sample_song.c final_build/src/
+          sed -i 's/$(RGBASM) -i/$(RGBASM) -I/' hUGEDriver-master/gbdk_example/Makefile
           make -C hUGEDriver-master/gbdk_example GBDK_HOME="$GITHUB_WORKSPACE/gbdk" RGBDS_HOME="$GITHUB_WORKSPACE/rgbds"
           cp hUGEDriver-master/gbdk_example/lib/hUGEDriver.lib final_build/src/
 
