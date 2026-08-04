@@ -1,6 +1,7 @@
 --- main.c
 +++ main.c
 @@ -151,12 +151,13 @@
+ static int16_t trail_x[2], trail_y[2];
  
  #ifdef PEGDROP_DEBUG
 -#define DEBUG_PACKET_SIZE 32
@@ -13,14 +14,18 @@
 +static uint16_t debug_fire_count;
  #endif
  static volatile uint16_t music_ticks;
-@@ -650,6 +651,9 @@
+ 
+@@ -651,6 +652,9 @@
+ 
  static void fire(void) {
      fx_t speed=TO_FX(3)+64; Ball *b=&balls[0];
 +#ifdef PEGDROP_DEBUG
 +    debug_fire_count++;
 +#endif
      memset(b,0,sizeof(Ball));
-@@ -868,6 +872,12 @@
+     b->x=TO_FX(CANNON_X);b->y=TO_FX(CANNON_Y);
+     b->vx=(fx_t)(((int32_t)COS_TABLE[aim_index]*speed)/100);
+@@ -866,6 +870,12 @@
      debug_packet[27]=(uint8_t)(shot_score>>8);
      debug_packet[28]=(uint8_t)score;
      debug_packet[29]=(uint8_t)(score>>8);
@@ -32,3 +37,4 @@
 +    debug_packet[35]=(uint8_t)(debug_fire_count>>8);
  }
  #endif
+ 
