@@ -7,7 +7,9 @@
 -#define PHYSICS_SUBSTEPS 2
 +#define PHYSICS_SUBSTEPS 1
  #define SHOT_FRAME_LIMIT 420
-@@ -439,10 +439,18 @@
+ #define STALL_NUDGE_FRAMES 45
+ #define STALL_END_FRAMES 90
+@@ -439,10 +439,13 @@
  static void spawn_explosion(uint8_t peg_x,uint8_t peg_y) {
      static const int16_t vx[4]={-192,192,-128,128};
      static const int16_t vy[4]={-256,-256,-160,-160};
@@ -21,15 +23,18 @@
 +    else if(active_count>=5u) spawn_limit=2;
 +    for(i=0;i<PARTICLE_COUNT && spawned<spawn_limit;i++) {
          if(!particles[i].active) {
-@@ -457,7 +465,7 @@
+             particles[i].x=px; particles[i].y=py;
+             particles[i].vx=(fx_t)vx[spawned]; particles[i].vy=(fx_t)vy[spawned];
+@@ -458,7 +461,7 @@
      for(i=0;i<PARTICLE_COUNT;i++) {
          Particle *p=&particles[i];
          uint8_t sprite_id=(uint8_t)(PARTICLE_SPRITE_BASE+i);
 -        if(!p->active) { move_sprite(sprite_id,0,0); continue; }
 +        if(!p->active) continue;
          p->vy=(fx_t)(p->vy+GRAVITY);
-@@ -742,10 +750,10 @@
-         }
+         p->x=(fx_t)(p->x+p->vx);
+         p->y=(fx_t)(p->y+p->vy);
+@@ -744,8 +747,8 @@
          for(;i<4;i++) move_sprite((uint8_t)(2+i),0,0);
      } else for(i=2;i<6;i++) move_sprite(i,0,0);
      if(state==STATE_PLAY && !fever) {
@@ -38,3 +43,5 @@
 +        move_sprite(6,(uint8_t)catcher_x,(uint8_t)(CATCHER_Y+16u));
 +        move_sprite(7,(uint8_t)(catcher_x+8),(uint8_t)(CATCHER_Y+16u));
      } else {move_sprite(6,0,0);move_sprite(7,0,0);}
+     if(state==STATE_PLAY && balls[0].active && shot_pegs>=5) {
+         move_sprite(8,(uint8_t)(trail_x[0]+8),(uint8_t)(trail_y[0]+16));
