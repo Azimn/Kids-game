@@ -1,0 +1,83 @@
+name: Peg Drop Canonical Build
+
+on:
+  push:
+    branches: [pegdrop-gbdk-build]
+    paths:
+      - '.github/workflows/pegdrop-gbdk-build.yml'
+      - 'pegdrop_source/**'
+      - 'stabilization/test_stabilization.py'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Materialize canonical source
+        run: |
+          chmod +x pegdrop_source/materialize_source.sh
+          pegdrop_source/materialize_source.sh "$GITHUB_WORKSPACE/pegdrop_build"
+          grep -q '#define ORANGE_TARGET 15' pegdrop_build/main.c
+          grep -q '#define PHYSICS_SUBSTEPS 1' pegdrop_build/main.c
+          grep -q '#define SHOT_FRAME_LIMIT 240' pegdrop_build/main.c
+          test "$(grep -c 'static void sfx_fire' pegdrop_build/main.c)" -eq 1
+
+      - name: Install GBDK and build hUGEDriver
+        run: |
+          wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
+          tar -xzf gbdk-linux64.tar.gz
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bison libpng-dev
+          wget -q https://github.com/gbdev/rgbds/releases/download/v0.6.1/rgbds-0.6.1.tar.gz
+          tar -xzf rgbds-0.6.1.tar.gz
+          make -C rgbds -j4 rgbasm rgblink rgbfix
+          wget -q https://github.com/SuperDisk/hUGEDriver/archive/refs/heads/master.zip -O huge.zip
+          unzip -q huge.zip
+          cd hUGEDriver-master
+          "$GITHUB_WORKSPACE/rgbds/rgbasm" -DGBDK -o hUGEDriver.obj hUGEDriver.asm
+          python tools/rgb2sdas.py -o hUGEDriver.o hUGEDriver.obj
+          "$GITHUB_WORKSPACE/gbdk/bin/sdar" -ru hUGEDriver.lib hUGEDriver.o
+          cd "$GITHUB_WORKSPACE"
+          cp hUGEDriver-master/hUGEDriver.lib pegdrop_build/
+
+      - name: Compile release and debug ROMs
+        working-directory: pegdrop_build
+        run: |
+          make clean
+          make LCC="$GITHUB_WORKSPACE/gbdk/bin/lcc"
+          test -s pegdrop_deluxe.gb
+          test -s pegdrop_deluxe_debug.gb
+          sha256sum pegdrop_deluxe.gb pegdrop_deluxe_debug.gb | tee ROM_SHA256.txt
+          grep -q '^5a5b168f4defe359ba6bf6800865010b58e6802d73fc4fd7b0200c606b9f5054  pegdrop_deluxe.gb$' ROM_SHA256.txt
+
+      - name: State-aware gameplay assertions
+        working-directory: pegdrop_build
+        run: |
+          python -m pip install --disable-pip-version-check pyboy pillow
+          cp ../stabilization/test_stabilization.py .
+          python test_stabilization.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pegdrop-canonical-build
+          path: |
+            pegdrop_build/pegdrop_deluxe.gb
+            pegdrop_build/pegdrop_deluxe_debug.gb
+            pegdrop_build/main.c
+            pegdrop_build/tiles.c
+            pegdrop_build/tiles.h
+            pegdrop_build/campaign_data.h
+            pegdrop_build/Makefile
+            pegdrop_build/hUGEDriver.h
+            pegdrop_build/hUGEDriver.lib
+            pegdrop_build/sample_song.c
+            pegdrop_build/ROM_SHA256.txt
+            pegdrop_build/PLAYTEST_RESULT.txt
+            pegdrop_build/STABILIZATION_NOTES.md
+            pegdrop_build/stabilized-*.png
+          if-no-files-found: error

@@ -1,0 +1,40 @@
+--- main.c
++++ main.c
+@@ -151,12 +151,13 @@
+ static int16_t trail_x[2], trail_y[2];
+ 
+ #ifdef PEGDROP_DEBUG
+-#define DEBUG_PACKET_SIZE 32
++#define DEBUG_PACKET_SIZE 36
+ static volatile uint8_t debug_packet[DEBUG_PACKET_SIZE] = {
+     0xDE,0xAD,0xBE,0xEF,0x50,0x45,0x47,0x03
+ };
+ static uint16_t debug_total_hits;
+ static uint16_t debug_orange_hits;
++static uint16_t debug_fire_count;
+ #endif
+ static volatile uint16_t music_ticks;
+ 
+@@ -651,6 +652,9 @@
+ 
+ static void fire(void) {
+     fx_t speed=TO_FX(3)+64; Ball *b=&balls[0];
++#ifdef PEGDROP_DEBUG
++    debug_fire_count++;
++#endif
+     memset(b,0,sizeof(Ball));
+     b->x=TO_FX(CANNON_X);b->y=TO_FX(CANNON_Y);
+     b->vx=(fx_t)(((int32_t)COS_TABLE[aim_index]*speed)/100);
+@@ -866,6 +870,12 @@
+     debug_packet[27]=(uint8_t)(shot_score>>8);
+     debug_packet[28]=(uint8_t)score;
+     debug_packet[29]=(uint8_t)(score>>8);
++    debug_packet[30]=balls[0].active;
++    debug_packet[31]=balls[1].active;
++    debug_packet[32]=(uint8_t)balls[1].frames;
++    debug_packet[33]=(uint8_t)(balls[1].frames>>8);
++    debug_packet[34]=(uint8_t)debug_fire_count;
++    debug_packet[35]=(uint8_t)(debug_fire_count>>8);
+ }
+ #endif
+ 

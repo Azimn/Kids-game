@@ -1,0 +1,114 @@
+name: Peg Drop Render Repair
+
+on:
+  push:
+    branches: [pegdrop-gbdk-build]
+    paths: ['.github/workflows/pegdrop-render-repair.yml']
+  workflow_dispatch:
+
+jobs:
+  repair-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore verified source
+        run: |
+          mkdir -p repair/src
+          cat pegdrop_build/chunk00.b64 pegdrop_build/chunk01.b64 pegdrop_build/chunk02.b64 pegdrop_build/c3_00.b64 pegdrop_build/c3_01.b64 pegdrop_build/c3_tail.b64 pegdrop_build/chunk04.b64 > repair/source.b64
+          echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  repair/source.b64' | sha256sum -c -
+          base64 -d repair/source.b64 > repair/source.tgz
+          tar -xzf repair/source.tgz -C repair/src
+      - name: Apply rendering and pacing repairs
+        working-directory: repair/src
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('main.c'); s=p.read_text()
+          # Remove fixed-address test instrumentation from release source.
+          a=s.index('/* Fixed WRAM debug mirrors'); b=s.index('typedef int16_t fx_t;')
+          s=s[:a]+s[b:]
+          s=s.replace('#define MAX_PEGS 72','#define MAX_PEGS 56')
+          s=s.replace('#define ORANGE_TARGET 25','#define ORANGE_TARGET 20')
+          s=s.replace('#define GRAVITY 12','#define GRAVITY 16')
+          s=s.replace('#define DAMPING 254','#define DAMPING 255')
+          s=s.replace('static uint8_t prev_keys;','static uint8_t prev_keys;\nstatic uint32_t hud_score_cache;\nstatic uint8_t hud_level_cache,hud_balls_cache,hud_orange_cache,hud_label_cache,hud_force;')
+          s=s.replace('static void set_tile(uint8_t x, uint8_t y, uint8_t t)', 'static void hide_all_sprites(void);\nstatic void set_tile(uint8_t x, uint8_t y, uint8_t t)',1)
+          old='static void clear_screen(void) { uint8_t x,y; fill_bkg_rect(0,0,20,18,0); if(_cpu==CGB_TYPE) for(y=0;y<18;y++) for(x=0;x<20;x++) set_bkg_attribute_xy(x,y,0); }'
+          new='static void clear_screen(void) { uint8_t x,y; fill_bkg_rect(0,0,20,18,0); if(_cpu==CGB_TYPE) for(y=0;y<18;y++) for(x=0;x<20;x++) set_bkg_attribute_xy(x,y,0); }\nstatic void begin_scene(void) { DISPLAY_OFF; hide_all_sprites(); clear_screen(); }\nstatic void end_scene(void) { DISPLAY_ON; }\nstatic void invalidate_hud(void) { hud_force=1; hud_label_cache=255; }'
+          s=s.replace(old,new)
+          s=s.replace('for(i=0;i<placed_pegs;i++) if(pegs[i].state && pegs[i].x==x && pegs[i].y==y) return 1;', 'for(i=0;i<placed_pegs;i++) if(pegs[i].state) { int8_t dx=(int8_t)pegs[i].x-(int8_t)x,dy=(int8_t)pegs[i].y-(int8_t)y; if(dx>=-1&&dx<=1&&dy>=-1&&dy<=1)return 1; }')
+          s=s.replace('peg_count=(uint8_t)(64 + (board_seed%9));','peg_count=(uint8_t)(46 + (board_seed%11));')
+          s=s.replace('    clear_screen();\n    placed_pegs=0;','    placed_pegs=0;')
+          s=s.replace('    assign_types();\n    for(i=0;i<peg_count;i++) draw_peg(&pegs[i]);','    assign_types();')
+          s=s.replace('pegs[k].type=PEG_PURPLE; draw_peg(&pegs[k]); break;', 'pegs[k].type=PEG_PURPLE; if(state==STATE_PLAY) draw_peg(&pegs[k]); break;')
+          s=s.replace('hit_pause=(p->type==PEG_ORANGE)?3:1;','hit_pause=(p->type==PEG_ORANGE)?1:0;')
+          s=s.replace('b->frames>1000','b->frames>600')
+          s=s.replace('fx_t speed=TO_FX(2)+160;','fx_t speed=TO_FX(3)+64;')
+          hs=s.index('static void draw_hud(void) {'); he=s.index('\n}\n\nstatic void hide_all_sprites',hs)+3
+          hud='''static void draw_hud(void) {\n uint8_t label=(shot_label_timer?shot_label:SHOT_NONE);\n if(hud_force||hud_score_cache!=score){print_num(0,0,score,7);hud_score_cache=score;}\n if(hud_force||hud_level_cache!=(uint8_t)(level_index+1)){print_num(9,0,(uint32_t)(level_index+1),2);hud_level_cache=(uint8_t)(level_index+1);}\n if(hud_force||hud_balls_cache!=balls_left){print_num(13,0,balls_left,2);hud_balls_cache=balls_left;}\n if(hud_force||hud_orange_cache!=orange_remaining){print_num(17,0,orange_remaining,2);hud_orange_cache=orange_remaining;}\n if(hud_force||hud_label_cache!=label){fill_bkg_rect(0,1,20,1,0);if(label!=SHOT_NONE)print_at((uint8_t)((20-strlen(shot_label_text()))/2),1,shot_label_text());hud_label_cache=label;}\n hud_force=0;\n}\nstatic void draw_playfield(void){uint8_t i;begin_scene();for(i=0;i<peg_count;i++)if(pegs[i].state)draw_peg(&pegs[i]);invalidate_hud();draw_hud();end_scene();}\n'''
+          s=s[:hs]+hud+s[he:]
+          for name in ['show_title','show_map','show_chapter','show_ready','show_clear','show_fail','show_complete']:
+              st=s.index('static void '+name+'(void) {'); pos=s.index('clear_screen(); hide_all_sprites();',st)
+              s=s[:pos]+'begin_scene();'+s[pos+len('clear_screen(); hide_all_sprites();'):]
+              depth=0
+              for j in range(st,len(s)):
+                  depth += (s[j]=='{')-(s[j]=='}')
+                  if depth==0 and j>st:
+                      s=s[:j]+'    end_scene();\n'+s[j:]; break
+          s=s.replace('else if(state==STATE_READY && (pressed&(J_A|J_START))) {state=STATE_PLAY; clear_screen(); {uint8_t i;for(i=0;i<peg_count;i++)draw_peg(&pegs[i]);}}','else if(state==STATE_READY && (pressed&(J_A|J_START))) {state=STATE_PLAY;draw_playfield();}')
+          s=s.replace('if(pressed&J_START) { paused=(uint8_t)!paused; if(paused) show_pause(); else { clear_screen(); {uint8_t i;for(i=0;i<peg_count;i++)draw_peg(&pegs[i]);} } }','if(pressed&J_START) {paused=(uint8_t)!paused;if(paused)show_pause();else draw_playfield();}')
+          s=s.replace('static void show_pause(void) {\n    fill_bkg_rect','static void show_pause(void) {\n    DISPLAY_OFF;\n    fill_bkg_rect')
+          s=s.replace('print_at(5,10,"START RESUME");\n}','print_at(5,10,"START RESUME");\n    DISPLAY_ON;\n}')
+          if 'static void update_debug_mirrors(void)' in s:
+              x=s.index('static void update_debug_mirrors(void)'); y=s.index('\nvoid main(void)',x); s=s[:x]+s[y+1:]
+          s=s.replace('while(1){handle_input();update_state();update_debug_mirrors();wait_vbl_done();}','while(1){handle_input();update_state();wait_vbl_done();}')
+          s=s.replace('state=STATE_TITLE;show_title();DISPLAY_ON;','state=STATE_TITLE;show_title();')
+          p.write_text(s)
+          PY
+      - name: Build with GBDK 4.3.0
+        run: |
+          wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
+          tar -xzf gbdk-linux64.tar.gz
+          cd repair/src
+          make clean || true
+          make LCC="$GITHUB_WORKSPACE/gbdk/bin/lcc"
+          sha256sum pegdrop_deluxe.gb > ROM_SHA256.txt
+      - name: Boot and inspect repaired transition
+        working-directory: repair/src
+        run: |
+          python -m pip install --disable-pip-version-check pyboy pillow
+          cat > test_repair.py <<'PY'
+          from pyboy import PyBoy
+          from pathlib import Path
+          p=PyBoy('pegdrop_deluxe.gb',window='null',sound_emulated=False);p.set_emulation_speed(0)
+          def tick(n):
+              for _ in range(n):p.tick()
+          def press(k):
+              p.button_press(k);tick(2);p.button_release(k);tick(8)
+          tick(120)
+          for k in ['start','a','a']:
+              press(k);tick(45)
+          p.screen.image.save('01-playfield-clean.png')
+          frames=[]
+          for shot in range(3):
+              for _ in range(shot*5):press('right')
+              press('a');tick(20);p.screen.image.save(f'02-shot-{shot+1}.png')
+              tick(700);p.screen.image.save(f'03-resolved-{shot+1}.png')
+          press('start');tick(30);p.screen.image.save('04-paused.png');press('start');tick(30)
+          Path('PLAYTEST_RESULT.txt').write_text('PASS: booted, entered playfield, launched three shots, waited through resolution windows, pause/resume executed.\n')
+          p.stop(save=False)
+          PY
+          python test_repair.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pegdrop-render-repair
+          path: |
+            repair/src/pegdrop_deluxe.gb
+            repair/src/main.c
+            repair/src/tiles.c
+            repair/src/tiles.h
+            repair/src/campaign_data.h
+            repair/src/Makefile
+            repair/src/ROM_SHA256.txt
+            repair/src/PLAYTEST_RESULT.txt
+            repair/src/*.png

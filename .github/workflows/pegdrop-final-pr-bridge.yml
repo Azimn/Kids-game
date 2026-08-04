@@ -1,0 +1,48 @@
+name: Peg Drop Final PR Bridge
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/pegdrop-final-pr-bridge.yml'
+      - '.github/workflows/pegdrop-build-final.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-and-collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dispatch final build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pegdrop-build-final.yml --ref pegdrop-gbdk-build
+          sleep 5
+          RUN_ID=$(gh run list --workflow pegdrop-build-final.yml --branch pegdrop-gbdk-build --limit 1 --json databaseId --jq '.[0].databaseId')
+          test -n "$RUN_ID"
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "Dispatched run $RUN_ID"
+
+      - name: Wait for final build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run watch "$RUN_ID" --exit-status
+
+      - name: Download final build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p collected
+          gh run download "$RUN_ID" --name pegdrop-final-repair --dir collected
+          find collected -type f -maxdepth 3 -print
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pegdrop-final-repair-collected
+          path: collected/**
+          if-no-files-found: error

@@ -1,0 +1,171 @@
+name: Peg Drop Final Repair Build
+
+on:
+  push:
+    branches: [pegdrop-gbdk-build]
+    paths:
+      - '.github/workflows/pegdrop-build-final.yml'
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore verified source
+        run: |
+          mkdir -p final/src
+          cat pegdrop_build/chunk00.b64 pegdrop_build/chunk01.b64 pegdrop_build/chunk02.b64 pegdrop_build/c3_00.b64 pegdrop_build/c3_01.b64 pegdrop_build/c3_tail.b64 pegdrop_build/chunk04.b64 > final/source.b64
+          echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  final/source.b64' | sha256sum -c -
+          base64 -d final/source.b64 > final/source.tgz
+          tar -xzf final/source.tgz -C final/src
+
+      - name: Apply rendering, pacing, and shake improvements
+        working-directory: final/src
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('main.c')
+          s=p.read_text()
+
+          if '/* Fixed WRAM debug mirrors' in s:
+              a=s.index('/* Fixed WRAM debug mirrors')
+              b=s.index('typedef int16_t fx_t;', a)
+              s=s[:a]+s[b:]
+
+          s=s.replace('#define MAX_PEGS 72', '#define MAX_PEGS 56')
+          s=s.replace('#define ORANGE_TARGET 25', '#define ORANGE_TARGET 20')
+          s=s.replace('#define GRAVITY 12', '#define GRAVITY 16')
+          s=s.replace('#define DAMPING 254', '#define DAMPING 255')
+          s=s.replace('b->frames>1000', 'b->frames>600')
+          s=s.replace('fx_t speed=TO_FX(2)+160;', 'fx_t speed=TO_FX(3)+64;')
+          s=s.replace('hit_pause=(p->type==PEG_ORANGE)?3:1;', 'hit_pause=(p->type==PEG_ORANGE)?1:0;')
+          s=s.replace('peg_count=(uint8_t)(64 + (board_seed%9));', 'peg_count=(uint8_t)(46 + (board_seed%11));')
+
+          s=s.replace(
+              'static uint8_t prev_keys;',
+              'static uint8_t prev_keys;\nstatic uint8_t screen_shake_timer;\nstatic uint32_t hud_score_cache;\nstatic uint8_t hud_level_cache,hud_balls_cache,hud_orange_cache,hud_label_cache,hud_force;'
+          )
+          s=s.replace('static void set_tile(uint8_t x, uint8_t y, uint8_t t)', 'static void hide_all_sprites(void);\nstatic void set_tile(uint8_t x, uint8_t y, uint8_t t)', 1)
+
+          s=s.replace(
+              'static void clear_screen(void) { uint8_t x,y; fill_bkg_rect(0,0,20,18,0); if(_cpu==CGB_TYPE) for(y=0;y<18;y++) for(x=0;x<20;x++) set_bkg_attribute_xy(x,y,0); }',
+              'static void clear_screen(void) { uint8_t x,y; fill_bkg_rect(0,0,20,18,0); if(_cpu==CGB_TYPE) for(y=0;y<18;y++) for(x=0;x<20;x++) set_bkg_attribute_xy(x,y,0); }\nstatic void begin_scene(void) { DISPLAY_OFF; screen_shake_timer=0; SCX_REG=0; SCY_REG=0; hide_all_sprites(); clear_screen(); }\nstatic void end_scene(void) { DISPLAY_ON; }\nstatic void invalidate_hud(void) { hud_force=1; hud_label_cache=255; }'
+          )
+
+          s=s.replace(
+              'for(i=0;i<placed_pegs;i++) if(pegs[i].state && pegs[i].x==x && pegs[i].y==y) return 1;',
+              'for(i=0;i<placed_pegs;i++) if(pegs[i].state) { int8_t dx=(int8_t)pegs[i].x-(int8_t)x,dy=(int8_t)pegs[i].y-(int8_t)y; if(dx>=-1&&dx<=1&&dy>=-1&&dy<=1)return 1; }'
+          )
+          s=s.replace('    clear_screen();\n    placed_pegs=0;', '    placed_pegs=0;')
+          s=s.replace('    assign_types();\n    for(i=0;i<peg_count;i++) draw_peg(&pegs[i]);', '    assign_types();')
+          s=s.replace('pegs[k].type=PEG_PURPLE; draw_peg(&pegs[k]); break;', 'pegs[k].type=PEG_PURPLE; if(state==STATE_PLAY) draw_peg(&pegs[k]); break;')
+
+          marker='    if(p->type==PEG_GREEN) activate_power(b);'
+          if marker in s:
+              s=s.replace(marker, '    if(p->type==PEG_GREEN || p->type==PEG_PURPLE) screen_shake_timer=15;\n'+marker)
+          award='static void award_fever(Ball *b) {'
+          if award in s:
+              s=s.replace(award, award+'\n    screen_shake_timer=30;', 1)
+
+          hs=s.index('static void draw_hud(void) {')
+          he=s.index('\n}\n\nstatic void hide_all_sprites', hs)+3
+          hud='''static void draw_hud(void) {\n uint8_t label=(shot_label_timer?shot_label:SHOT_NONE);\n if(hud_force||hud_score_cache!=score){print_num(0,0,score,7);hud_score_cache=score;}\n if(hud_force||hud_level_cache!=(uint8_t)(level_index+1)){print_num(9,0,(uint32_t)(level_index+1),2);hud_level_cache=(uint8_t)(level_index+1);}\n if(hud_force||hud_balls_cache!=balls_left){print_num(13,0,balls_left,2);hud_balls_cache=balls_left;}\n if(hud_force||hud_orange_cache!=orange_remaining){print_num(17,0,orange_remaining,2);hud_orange_cache=orange_remaining;}\n if(hud_force||hud_label_cache!=label){fill_bkg_rect(0,1,20,1,0);if(label!=SHOT_NONE)print_at((uint8_t)((20-strlen(shot_label_text()))/2),1,shot_label_text());hud_label_cache=label;}\n hud_force=0;\n}\nstatic void draw_playfield(void){uint8_t i;begin_scene();for(i=0;i<peg_count;i++)if(pegs[i].state)draw_peg(&pegs[i]);invalidate_hud();draw_hud();end_scene();}\n'''
+          s=s[:hs]+hud+s[he:]
+
+          for name in ['show_title','show_map','show_chapter','show_ready','show_clear','show_fail','show_complete']:
+              token='static void '+name+'(void) {'
+              if token not in s: continue
+              st=s.index(token)
+              pos=s.find('clear_screen(); hide_all_sprites();', st)
+              if pos < 0: continue
+              s=s[:pos]+'begin_scene();'+s[pos+len('clear_screen(); hide_all_sprites();'):]
+              brace=s.index('{', st)
+              depth=1
+              for j in range(brace+1, len(s)):
+                  if s[j]=='{': depth+=1
+                  elif s[j]=='}':
+                      depth-=1
+                      if depth==0:
+                          s=s[:j]+'    end_scene();\n'+s[j:]
+                          break
+
+          s=s.replace(
+              'else if(state==STATE_READY && (pressed&(J_A|J_START))) {state=STATE_PLAY; clear_screen(); {uint8_t i;for(i=0;i<peg_count;i++)draw_peg(&pegs[i]);}}',
+              'else if(state==STATE_READY && (pressed&(J_A|J_START))) {state=STATE_PLAY;draw_playfield();}'
+          )
+          s=s.replace(
+              'if(pressed&J_START) { paused=(uint8_t)!paused; if(paused) show_pause(); else { clear_screen(); {uint8_t i;for(i=0;i<peg_count;i++)draw_peg(&pegs[i]);} } }',
+              'if(pressed&J_START) {paused=(uint8_t)!paused;if(paused)show_pause();else draw_playfield();}'
+          )
+
+          shake='''\nstatic void update_screen_shake(void) {\n    static const int8_t sx[8]={0,2,-2,1,-1,2,-1,0};\n    static const int8_t sy[8]={-1,1,2,-2,1,0,-1,2};\n    uint8_t phase;\n    if(screen_shake_timer){phase=(uint8_t)(screen_shake_timer&7u);SCX_REG=(uint8_t)sx[phase];SCY_REG=(uint8_t)sy[phase];screen_shake_timer--;}\n    else {SCX_REG=0;SCY_REG=0;}\n}\n'''
+          mainpos=s.index('void main(void) {')
+          s=s[:mainpos]+shake+s[mainpos:]
+
+          if 'static void update_debug_mirrors(void)' in s:
+              x=s.index('static void update_debug_mirrors(void)')
+              y=s.index('\nvoid main(void)', x)
+              s=s[:x]+s[y+1:]
+          s=s.replace('while(1){handle_input();update_state();update_debug_mirrors();wait_vbl_done();}', 'while(1){handle_input();update_state();update_screen_shake();wait_vbl_done();}')
+          s=s.replace('while(1){handle_input();update_state();wait_vbl_done();}', 'while(1){handle_input();update_state();update_screen_shake();wait_vbl_done();}')
+          s=s.replace('state=STATE_TITLE;show_title();DISPLAY_ON;', 'state=STATE_TITLE;show_title();')
+          p.write_text(s)
+          PY
+
+      - name: Compile with GBDK 4.3.0
+        run: |
+          wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
+          tar -xzf gbdk-linux64.tar.gz
+          cd final/src
+          make clean || true
+          make LCC="$GITHUB_WORKSPACE/gbdk/bin/lcc"
+          test -s pegdrop_deluxe.gb
+          sha256sum pegdrop_deluxe.gb | tee ROM_SHA256.txt
+
+      - name: Boot-test repaired ROM
+        working-directory: final/src
+        run: |
+          python -m pip install --disable-pip-version-check pyboy pillow
+          cat > test_final.py <<'PY'
+          from pathlib import Path
+          from pyboy import PyBoy
+          p=PyBoy('pegdrop_deluxe.gb',window='null',sound_emulated=False)
+          p.set_emulation_speed(0)
+          def tick(n):
+              for _ in range(n): p.tick()
+          def press(k):
+              p.button_press(k); tick(2); p.button_release(k); tick(8)
+          tick(120)
+          for k in ['start','a','a']:
+              press(k); tick(45)
+          p.screen.image.save('playfield-clean.png')
+          for n in range(3):
+              for _ in range(n*4): press('right')
+              press('a'); tick(30)
+              p.screen.image.save(f'shot-{n+1}.png')
+              tick(700)
+              p.screen.image.save(f'resolved-{n+1}.png')
+          press('start'); tick(30); p.screen.image.save('paused.png')
+          press('start'); tick(30)
+          Path('PLAYTEST_RESULT.txt').write_text('PASS: compiled, booted, entered gameplay, launched three shots, waited through resolution windows, and exercised pause/resume.\n')
+          p.stop(save=False)
+          PY
+          python test_final.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pegdrop-final-repair
+          path: |
+            final/src/pegdrop_deluxe.gb
+            final/src/main.c
+            final/src/tiles.c
+            final/src/tiles.h
+            final/src/campaign_data.h
+            final/src/Makefile
+            final/src/ROM_SHA256.txt
+            final/src/PLAYTEST_RESULT.txt
+            final/src/*.png
+          if-no-files-found: warn

@@ -1,0 +1,35 @@
+--- main.c
++++ main.c
+@@ -543,12 +543,17 @@
+ static uint8_t catcher_opening(void) { return (power_active==POWER_PYRAMID && power_turns)?14:8; }
+ static uint8_t catcher_outer(void) { return (power_active==POWER_PYRAMID && power_turns)?25:18; }
+ static void track_near_orange(Ball *b) {
+-    uint8_t i; int16_t bx=FROM_FX(b->x), by=FROM_FX(b->y);
++    uint8_t i;
++    int16_t bx=FROM_FX(b->x), by=FROM_FX(b->y);
+     for(i=0;i<peg_count;i++) if(pegs[i].state==1 && pegs[i].type==PEG_ORANGE) {
+         int16_t dx=(int16_t)(bx-(pegs[i].x*8+4));
+         int16_t dy=(int16_t)(by-(pegs[i].y*8+4));
+-        uint16_t d2=(uint16_t)(dx*dx+dy*dy);
+-        if(d2<nearest_orange_d2) nearest_orange_d2=d2;
++        uint8_t ax=(uint8_t)((dx<0)?-dx:dx);
++        uint8_t ay=(uint8_t)((dy<0)?-dy:dy);
++        if(ax<10u && ay<10u) {
++            uint16_t d2=(uint16_t)ax*ax+(uint16_t)ay*ay;
++            if(d2<nearest_orange_d2) nearest_orange_d2=d2;
++        }
+     }
+ }
+ 
+@@ -606,10 +611,10 @@
+         b->y=(fx_t)(b->y+(b->vy/PHYSICS_SUBSTEPS));
+         resolve_walls(b);
+         resolve_pegs(b);
+-        track_near_orange(b);
+         if(try_catcher(b)) return;
+     }
+ 
++    if((b->frames&3u)==0u) track_near_orange(b);
+     x=FROM_FX(b->x); y=FROM_FX(b->y);
+     speed=(uint16_t)(((b->vx<0)?-b->vx:b->vx)+((b->vy<0)?-b->vy:b->vy));
+     if(speed<96u && x==b->last_x && y==b->last_y) {

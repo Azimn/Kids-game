@@ -1,0 +1,126 @@
+name: Peg Drop State-Aware V2
+
+on:
+  push:
+    branches: [pegdrop-gbdk-build]
+    paths:
+      - '.github/workflows/pegdrop-state-aware-v2.yml'
+      - 'pegdrop_build/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore verified source
+        run: |
+          mkdir -p pegdrop_v2/src
+          cat pegdrop_build/chunk00.b64 pegdrop_build/chunk01.b64 pegdrop_build/chunk02.b64 pegdrop_build/c3_00.b64 pegdrop_build/c3_01.b64 pegdrop_build/c3_tail.b64 pegdrop_build/chunk04.b64 > pegdrop_v2/source.b64
+          echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  pegdrop_v2/source.b64' | sha256sum -c -
+          base64 --decode pegdrop_v2/source.b64 > pegdrop_v2/source.tgz
+          tar -xzf pegdrop_v2/source.tgz -C pegdrop_v2/src
+
+      - name: Add versioned debug packet
+        working-directory: pegdrop_v2/src
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('main.c'); s=p.read_text()
+          s=s.replace('typedef int16_t fx_t;\n','''\nvolatile uint8_t dbg_packet[32];\ntypedef int16_t fx_t;\n''')
+          code='''\nstatic void update_debug_packet(void) {\n    uint16_t f=balls[0].frames;\n    dbg_packet[0]=0xDE; dbg_packet[1]=0xAD; dbg_packet[2]=0xBE; dbg_packet[3]=0xEF;\n    dbg_packet[4]='P'; dbg_packet[5]='E'; dbg_packet[6]='G'; dbg_packet[7]=2;\n    dbg_packet[8]=state; dbg_packet[9]=level_index; dbg_packet[10]=balls_left; dbg_packet[11]=orange_remaining;\n    dbg_packet[12]=active_ball_count; dbg_packet[13]=fever; dbg_packet[14]=power_active; dbg_packet[15]=paused;\n    dbg_packet[16]=(uint8_t)f; dbg_packet[17]=(uint8_t)(f>>8);\n    dbg_packet[18]=(uint8_t)score; dbg_packet[19]=(uint8_t)(score>>8); dbg_packet[20]=(uint8_t)(score>>16); dbg_packet[21]=(uint8_t)(score>>24);\n    dbg_packet[22]=(uint8_t)shot_score; dbg_packet[23]=(uint8_t)(shot_score>>8); dbg_packet[24]=(uint8_t)(shot_score>>16);\n}\nstatic void process_debug_packet(void) {\n    uint8_t cmd=dbg_packet[25];\n    if(!cmd) return;\n    dbg_packet[27]=state; dbg_packet[28]=balls_left; dbg_packet[29]=active_ball_count; dbg_packet[30]=paused;\n    if(cmd==1) fire();\n    else if(cmd==2) paused=(uint8_t)!paused;\n    dbg_packet[31]=active_ball_count;\n    dbg_packet[25]=0; dbg_packet[26]++;\n}\n\n'''
+          s=s.replace('void main(void) {',code+'void main(void) {')
+          s=s.replace('while(1){handle_input();update_state();wait_vbl_done();}','while(1){process_debug_packet();handle_input();update_state();update_debug_packet();wait_vbl_done();}')
+          p.write_text(s)
+          PY
+
+      - name: Write emulator regression
+        working-directory: pegdrop_v2/src
+        run: |
+          mkdir -p emulator_test
+          cat > emulator_test/test_v2.py <<'PY'
+          from pathlib import Path
+          from pyboy import PyBoy
+          root=Path(__file__).resolve().parents[1]
+          pyboy=PyBoy(str(root/'pegdrop_deluxe.gb'),window='null',sound_emulated=False)
+          pyboy.set_emulation_speed(0)
+          def tick(n=1):
+              for _ in range(n): pyboy.tick()
+          def press(name):
+              pyboy.button_press(name); tick(2); pyboy.button_release(name); tick(4)
+          tick(90)
+          sig=bytes([0xDE,0xAD,0xBE,0xEF,ord('P'),ord('E'),ord('G'),2])
+          def locate():
+              for a in range(0xC000,0xDFE0):
+                  if bytes(pyboy.memory[a+i] for i in range(8))==sig:
+                      return a
+              return None
+          base=locate(); assert base is not None, 'debug packet not found'
+          def u8(o): return pyboy.memory[base+o]
+          def u16(o): return u8(o)|(u8(o+1)<<8)
+          def u24(o): return u8(o)|(u8(o+1)<<8)|(u8(o+2)<<16)
+          def u32(o): return u24(o)|(u8(o+3)<<24)
+          def snap(): return {'state':u8(8),'level':u8(9),'balls':u8(10),'orange':u8(11),'active':u8(12),'fever':u8(13),'power':u8(14),'paused':u8(15),'frames':u16(16),'score':u32(18),'shot_score':u24(22),'ack':u8(26),'pre_state':u8(27),'pre_balls':u8(28),'pre_active':u8(29),'pre_paused':u8(30),'post_active':u8(31)}
+          for b in ['start','a','a','a','a','a']:
+              if snap()['state']==2: break
+              press(b); tick(20)
+          tick(10)
+          start=snap(); assert start['state']==2 and start['balls']==10 and start['active']==0, start
+          def command(v):
+              before=u8(26); pyboy.memory[base+25]=v
+              for _ in range(30):
+                  pyboy.tick()
+                  if u8(26)!=before: return
+              raise AssertionError(('no ack',v,snap()))
+          command(1); tick(2)
+          launched=snap()
+          assert launched['pre_state']==2 and launched['pre_balls']==10 and launched['pre_active']==0, launched
+          assert launched['post_active']==1 and launched['active']==1 and launched['balls']==9, launched
+          command(2); tick(4); paused=snap(); assert paused['paused']==1, paused
+          frozen=paused['frames']; tick(60); assert snap()['frames']==frozen, (paused,snap())
+          command(2); tick(4); assert snap()['paused']==0, snap()
+          for _ in range(1200):
+              pyboy.tick()
+              if snap()['active']==0: break
+          resolved=snap(); assert resolved['active']==0 and resolved['frames']==0 and resolved['shot_score']==0, resolved
+          before=resolved['balls']; command(1); tick(2); second=snap()
+          assert second['active']==1 and second['balls']==before-1, second
+          pyboy.screen.image.save('state-aware-v2.png')
+          result={'base':hex(base),'start':start,'launched':launched,'paused':paused,'resolved':resolved,'second':second}
+          Path('state-aware-v2-results.txt').write_text('PASS\n'+repr(result)+'\n')
+          pyboy.stop(save=False)
+          print('PASS',result)
+          PY
+
+      - name: Install GBDK and compile
+        run: |
+          wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
+          tar -xzf gbdk-linux64.tar.gz
+          cd pegdrop_v2/src
+          make clean || true
+          make LCC="$GITHUB_WORKSPACE/gbdk/bin/lcc"
+          test -s pegdrop_deluxe.gb
+          sha256sum pegdrop_deluxe.gb
+
+      - name: Run PyBoy regression
+        working-directory: pegdrop_v2/src
+        run: |
+          python -m pip install --disable-pip-version-check pyboy pillow
+          python emulator_test/test_v2.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pegdrop-state-aware-v2
+          path: |
+            pegdrop_v2/src/pegdrop_deluxe.gb
+            pegdrop_v2/src/main.c
+            pegdrop_v2/src/tiles.c
+            pegdrop_v2/src/tiles.h
+            pegdrop_v2/src/campaign_data.h
+            pegdrop_v2/src/Makefile
+            pegdrop_v2/src/emulator_test/test_v2.py
+            pegdrop_v2/src/state-aware-v2-results.txt
+            pegdrop_v2/src/state-aware-v2.png
+          if-no-files-found: warn
