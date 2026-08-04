@@ -1,0 +1,277 @@
+--- main.c
++++ main.c
+@@ -33,9 +33,13 @@
+ #define AIM_STEPS 49
+ #define ADVENTURE_LEVELS 55
+ #define START_BALLS 10
+-#define ORANGE_TARGET 20
++#define ORANGE_TARGET 15
+ #define PEG_HIT_R2 49
+ #define GRAVITY 16
++#define PHYSICS_SUBSTEPS 2
++#define SHOT_FRAME_LIMIT 420
++#define STALL_NUDGE_FRAMES 45
++#define STALL_END_FRAMES 90
+ #define DAMPING 255
+ #define RESTITUTION 236
+ 
+@@ -94,6 +98,8 @@
+     uint8_t first_orange_x;
+     uint8_t first_orange_y;
+     uint8_t orange_hits;
++    int16_t last_x, last_y;
++    uint8_t stall_frames;
+ } Ball;
+ 
+ typedef struct {
+@@ -144,6 +150,16 @@
+ static uint8_t paused;
+ static int16_t trail_x[2], trail_y[2];
+ 
++#ifdef PEGDROP_DEBUG
++#define DEBUG_PACKET_SIZE 32
++static volatile uint8_t debug_packet[DEBUG_PACKET_SIZE] = {
++    0xDE,0xAD,0xBE,0xEF,0x50,0x45,0x47,0x03
++};
++static uint16_t debug_total_hits;
++static uint16_t debug_orange_hits;
++#endif
++static volatile uint16_t music_ticks;
++
+ #define SHOT_NONE 0
+ #define SHOT_GOOD 1
+ #define SHOT_GREAT 2
+@@ -214,8 +230,10 @@
+ static void sound_init(void) {
+     NR52_REG=0x80; NR50_REG=0x77; NR51_REG=0xFF;
+ }
++/* Channel 1 is reserved for sound effects. hUGEDriver owns channels 2-4. */
+ static void tone(uint16_t f, uint8_t env) {
+-    NR21_REG=0x80; NR22_REG=env; NR23_REG=(uint8_t)f; NR24_REG=(uint8_t)(0x80|((f>>8)&7));
++    NR10_REG=0x00; NR11_REG=0x80; NR12_REG=env;
++    NR13_REG=(uint8_t)f; NR14_REG=(uint8_t)(0x80|((f>>8)&7));
+ }
+ static void sfx_fire(void) { NR10_REG=0x16; NR11_REG=0x81; NR12_REG=0xF2; NR13_REG=0x70; NR14_REG=0x86; }
+ static void sfx_peg(uint8_t type) {
+@@ -223,13 +241,17 @@
+     tone(pitch, type==PEG_ORANGE?0xF2:(type==PEG_PURPLE?0xD2:0xA1));
+ }
+ static void sfx_power(void) { tone(0x760,0xF3); }
+-static void sfx_catch(void) { NR41_REG=0x1C; NR42_REG=0xF2; NR43_REG=0x23; NR44_REG=0x80; }
+-static void sfx_fever(void) { NR30_REG=0x80; NR31_REG=0x20; NR32_REG=0x20; NR33_REG=0xC0; NR34_REG=0x87; }
++static void sfx_catch(void) { tone(0x680,0xF2); }
++static void sfx_fever(void) { tone(0x7C0,0xF4); }
+ static void sfx_fail(void) { tone(0x220,0xC3); }
+ static void sfx_style_bonus(uint8_t label) {
+     if(label==SHOT_SUPER) tone(0x7D0,0xF1);
+     else if(label==SHOT_LONG) tone(0x790,0xE1);
+ }
++static void music_vbl(void) {
++    hUGE_dosound();
++    music_ticks++;
++}
+ 
+ static uint8_t tile_for_peg(const Peg *p) {
+     if (p->state==2) return TILE_HIT;
+@@ -353,10 +375,10 @@
+ }
+ 
+ static uint8_t orange_multiplier(void) {
+-    if(orange_remaining<=3) return 10;
+-    if(orange_remaining<=6) return 5;
+-    if(orange_remaining<=10) return 3;
+-    if(orange_remaining<=15) return 2;
++    if(orange_remaining<=2) return 10;
++    if(orange_remaining<=4) return 5;
++    if(orange_remaining<=7) return 3;
++    if(orange_remaining<=11) return 2;
+     return 1;
+ }
+ 
+@@ -440,6 +462,10 @@
+ static void hit_peg(Ball *b,Peg *p) {
+     uint16_t base;
+     p->state=2; draw_peg(p); spawn_explosion(p->x,p->y); shot_pegs++; hit_pause=(p->type==PEG_ORANGE)?1:0;
++#ifdef PEGDROP_DEBUG
++    debug_total_hits++;
++    if(p->type==PEG_ORANGE) debug_orange_hits++;
++#endif
+     if(p->type==PEG_ORANGE) {
+         base=100; shot_oranges++; if(orange_remaining) orange_remaining--;
+         if(b->orange_hits==0){b->first_orange_x=p->x;b->first_orange_y=p->y;} else {
+@@ -457,19 +483,35 @@
+ }
+ 
+ static void resolve_pegs(Ball *b) {
+-    uint8_t i; int16_t bx=FROM_FX(b->x),by=FROM_FX(b->y);
++    uint8_t i, best_index=255;
++    int16_t bx=FROM_FX(b->x), by=FROM_FX(b->y);
+     uint8_t radius=(power_active==POWER_HAT && power_turns)?6:3;
+     uint16_t hitr=(uint16_t)((radius+4)*(radius+4));
++    int32_t best_d2=32767L;
++    int16_t best_dx=0, best_dy=-1;
++
+     for(i=0;i<peg_count;i++) if(pegs[i].state==1) {
+         int16_t dx=(int16_t)(bx-(pegs[i].x*8+4));
+         int16_t dy=(int16_t)(by-(pegs[i].y*8+4));
+         int32_t d2=(int32_t)dx*dx+(int32_t)dy*dy;
+-        if(d2<hitr) {
+-            hit_peg(b,&pegs[i]);
+-            if(!(power_active==POWER_FIRE && power_turns)) reflect_ball(b,dx,dy,d2);
+-            break;
++        if(d2<(int32_t)hitr && d2<best_d2) {
++            best_d2=d2; best_index=i; best_dx=dx; best_dy=dy;
+         }
+     }
++
++    if(best_index!=255) {
++        int16_t ax=(best_dx<0)?-best_dx:best_dx;
++        int16_t ay=(best_dy<0)?-best_dy:best_dy;
++        int16_t norm=(ax>ay)?ax:ay;
++        int16_t distance=(int16_t)(radius+5);
++        int16_t px=(int16_t)(pegs[best_index].x*8+4);
++        int16_t py=(int16_t)(pegs[best_index].y*8+4);
++        if(norm<1) { best_dx=0; best_dy=-1; norm=1; }
++        hit_peg(b,&pegs[best_index]);
++        if(!(power_active==POWER_FIRE && power_turns)) reflect_ball(b,best_dx,best_dy,best_d2);
++        b->x=TO_FX(px+(best_dx*distance)/norm);
++        b->y=TO_FX(py+(best_dy*distance)/norm);
++    }
+ }
+ 
+ static void resolve_walls(Ball *b) {
+@@ -528,17 +570,39 @@
+ }
+ 
+ static void update_ball(Ball *b) {
++    uint8_t step;
++    int16_t x,y;
++    uint16_t speed;
+     if(!b->active) return;
+     if(b==&balls[0] && (trail_tick++&3)==0) {
+         trail_x[1]=trail_x[0]; trail_y[1]=trail_y[0];
+         trail_x[0]=FROM_FX(b->x); trail_y[0]=FROM_FX(b->y);
+     }
+-    b->frames++; b->vy+=GRAVITY; b->vx=FX_MUL(b->vx,DAMPING); b->vy=FX_MUL(b->vy,DAMPING);
+-    b->x+=b->vx; b->y+=b->vy; resolve_walls(b); resolve_pegs(b); track_near_orange(b);
+-    if(try_catcher(b)) return;
+-    if(FROM_FX(b->y)>PLAY_BOTTOM+4 || b->frames>600) {
++    b->frames++;
++    for(step=0;step<PHYSICS_SUBSTEPS && b->active;step++) {
++        b->vy=(fx_t)(b->vy+(GRAVITY/PHYSICS_SUBSTEPS));
++        b->vx=FX_MUL(b->vx,DAMPING);
++        b->vy=FX_MUL(b->vy,DAMPING);
++        b->x=(fx_t)(b->x+(b->vx/PHYSICS_SUBSTEPS));
++        b->y=(fx_t)(b->y+(b->vy/PHYSICS_SUBSTEPS));
++        resolve_walls(b);
++        resolve_pegs(b);
++        track_near_orange(b);
++        if(try_catcher(b)) return;
++    }
++
++    x=FROM_FX(b->x); y=FROM_FX(b->y);
++    speed=(uint16_t)(((b->vx<0)?-b->vx:b->vx)+((b->vy<0)?-b->vy:b->vy));
++    if(speed<96u && x==b->last_x && y==b->last_y) {
++        if(b->stall_frames<255) b->stall_frames++;
++        if(b->stall_frames==STALL_NUDGE_FRAMES) b->vy=(fx_t)(b->vy+128);
++        if(b->stall_frames>=STALL_END_FRAMES) { finish_ball(b); return; }
++    } else b->stall_frames=0;
++    b->last_x=x; b->last_y=y;
++
++    if(y>PLAY_BOTTOM+4 || b->frames>SHOT_FRAME_LIMIT) {
+         if(power_active==POWER_SPOOKY && !b->spooky_used && !fever) {
+-            b->y=TO_FX(PLAY_TOP+3); b->vy=(fx_t)(b->vy>0?b->vy:-b->vy); b->spooky_used=1;
++            b->y=TO_FX(PLAY_TOP+3); b->vy=(fx_t)(b->vy>0?b->vy:-b->vy); b->spooky_used=1; b->stall_frames=0;
+         } else finish_ball(b);
+     }
+ }
+@@ -591,7 +655,7 @@
+     b->x=TO_FX(CANNON_X);b->y=TO_FX(CANNON_Y);
+     b->vx=(fx_t)(((int32_t)COS_TABLE[aim_index]*speed)/100);
+     b->vy=(fx_t)(((int32_t)SIN_TABLE[aim_index]*speed)/100);
+-    b->active=1; active_ball_count=1; balls_left--; shot_pegs=0;shot_oranges=0;shot_score=0; nearest_orange_d2=65535u; shot_label=SHOT_NONE; shot_label_timer=0; sfx_fire();
++    b->active=1; b->last_x=CANNON_X; b->last_y=CANNON_Y; b->stall_frames=0; active_ball_count=1; balls_left--; shot_pegs=0;shot_oranges=0;shot_score=0; nearest_orange_d2=65535u; shot_label=SHOT_NONE; shot_label_timer=0; sfx_fire();
+ }
+ 
+ static void update_catcher(void) {
+@@ -772,6 +836,39 @@
+ }
+ 
+ 
++#ifdef PEGDROP_DEBUG
++static uint8_t count_active_particles(void) {
++    uint8_t i,n=0;
++    for(i=0;i<PARTICLE_COUNT;i++) if(particles[i].active) n++;
++    return n;
++}
++static void update_debug_packet(void) {
++    uint16_t mt=music_ticks;
++    debug_packet[8]=state;
++    debug_packet[9]=level_index;
++    debug_packet[10]=balls_left;
++    debug_packet[11]=orange_remaining;
++    debug_packet[12]=active_ball_count;
++    debug_packet[13]=shot_pegs;
++    debug_packet[14]=power_active;
++    debug_packet[15]=fever;
++    debug_packet[16]=count_active_particles();
++    debug_packet[17]=paused;
++    debug_packet[18]=(uint8_t)balls[0].frames;
++    debug_packet[19]=(uint8_t)(balls[0].frames>>8);
++    debug_packet[20]=(uint8_t)debug_total_hits;
++    debug_packet[21]=(uint8_t)(debug_total_hits>>8);
++    debug_packet[22]=(uint8_t)debug_orange_hits;
++    debug_packet[23]=(uint8_t)(debug_orange_hits>>8);
++    debug_packet[24]=(uint8_t)mt;
++    debug_packet[25]=(uint8_t)(mt>>8);
++    debug_packet[26]=(uint8_t)shot_score;
++    debug_packet[27]=(uint8_t)(shot_score>>8);
++    debug_packet[28]=(uint8_t)score;
++    debug_packet[29]=(uint8_t)(score>>8);
++}
++#endif
++
+ static void update_screen_shake(void) {
+     static const int8_t sx[8]={0,2,-2,1,-1,2,-1,0};
+     static const int8_t sy[8]={-1,1,2,-2,1,0,-1,2};
+@@ -787,7 +884,14 @@
+     set_sprite_tile(6,2);set_sprite_tile(7,3);set_sprite_tile(8,1);set_sprite_tile(9,1);
+     for(i=0;i<PARTICLE_COUNT;i++) set_sprite_tile((uint8_t)(PARTICLE_SPRITE_BASE+i),1);
+     SHOW_BKG;SHOW_SPRITES;SPRITES_8x8;apply_palettes();sound_init();
+-    __critical { hUGE_init(&sample_song); add_VBL(hUGE_dosound); }
++    __critical { hUGE_init(&sample_song); hUGE_mute_channel(HT_CH1,HT_CH_MUTE); add_VBL(music_vbl); }
+     state=STATE_TITLE;show_title();
+-    while(1){handle_input();update_state();update_screen_shake();wait_vbl_done();}
++    #ifdef PEGDROP_DEBUG
++    update_debug_packet();
++#endif
++    while(1){handle_input();update_state();update_screen_shake();
++#ifdef PEGDROP_DEBUG
++        update_debug_packet();
++#endif
++        wait_vbl_done();}
+ }
+--- Makefile
++++ Makefile
+@@ -1,15 +1,19 @@
+ LCC ?= lcc
+ TARGET := pegdrop_deluxe.gb
++DEBUG_TARGET := pegdrop_deluxe_debug.gb
+ HUGE_LIB := hUGEDriver.lib
+ SOURCES := main.c tiles.c sample_song.c
+ HEADERS := tiles.h hUGEDriver.h campaign_data.h
+ 
+-all: $(TARGET)
++all: $(TARGET) $(DEBUG_TARGET)
+ 
+ $(TARGET): $(SOURCES) $(HEADERS) $(HUGE_LIB)
+ 	$(LCC) -I. -Wm-yC -Wm-yn"PEG DROP DX" -Wm-yt0x1B -Wl-l$(HUGE_LIB) -o $@ $(SOURCES)
+ 
++$(DEBUG_TARGET): $(SOURCES) $(HEADERS) $(HUGE_LIB)
++	$(LCC) -DPEGDROP_DEBUG -I. -Wm-yC -Wm-yn"PEG DROP DBG" -Wm-yt0x1B -Wl-l$(HUGE_LIB) -o $@ $(SOURCES)
++
+ clean:
+-	rm -f $(TARGET) *.asm *.ihx *.lk *.lst *.map *.noi *.o *.sym
++	rm -f $(TARGET) $(DEBUG_TARGET) *.asm *.ihx *.lk *.lst *.map *.noi *.o *.sym
+ 
+ .PHONY: all clean
