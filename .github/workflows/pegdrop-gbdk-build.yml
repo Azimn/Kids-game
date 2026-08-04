@@ -34,17 +34,19 @@ jobs:
         run: |
           wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
           tar -xzf gbdk-linux64.tar.gz
-          wget -q https://github.com/gbdev/rgbds/releases/download/v0.8.0/rgbds-0.8.0-linux-x86_64.tar.xz
-          mkdir -p rgbds
-          tar -xJf rgbds-0.8.0-linux-x86_64.tar.xz -C rgbds
-          chmod +x rgbds/rgbasm rgbds/rgblink rgbds/rgbfix rgbds/rgbgfx
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bison libpng-dev
+          wget -q https://github.com/gbdev/rgbds/releases/download/v0.6.1/rgbds-0.6.1.tar.gz
+          tar -xzf rgbds-0.6.1.tar.gz
+          make -C rgbds -j4 rgbasm rgblink rgbfix
           wget -q https://github.com/SuperDisk/hUGEDriver/archive/refs/heads/master.zip -O huge.zip
           unzip -q huge.zip
           cp hUGEDriver-master/include/hUGEDriver.h final_build/src/
           cp hUGEDriver-master/gbdk_example/src/sample_song.c final_build/src/
-          sed -i 's/$(RGBASM) -i/$(RGBASM) -I/' hUGEDriver-master/gbdk_example/Makefile
-          make -C hUGEDriver-master/gbdk_example GBDK_HOME="$GITHUB_WORKSPACE/gbdk" RGBDS_HOME="$GITHUB_WORKSPACE/rgbds"
-          cp hUGEDriver-master/gbdk_example/lib/hUGEDriver.lib final_build/src/
+          "$GITHUB_WORKSPACE/rgbds/rgbasm" -DGBDK -o hUGEDriver-master/hUGEDriver.obj hUGEDriver-master/hUGEDriver.asm
+          python hUGEDriver-master/tools/rgb2sdas.py -o hUGEDriver-master/hUGEDriver.o hUGEDriver-master/hUGEDriver.obj
+          "$GITHUB_WORKSPACE/gbdk/bin/sdar" -ru hUGEDriver-master/hUGEDriver.lib hUGEDriver-master/hUGEDriver.o
+          cp hUGEDriver-master/hUGEDriver.lib final_build/src/
 
       - name: Compile final ROM
         working-directory: final_build/src
