@@ -1,13 +1,12 @@
-name: Peg Drop Stabilization Build
+name: Peg Drop Canonical Build
 
 on:
   push:
     branches: [pegdrop-gbdk-build]
     paths:
       - '.github/workflows/pegdrop-gbdk-build.yml'
-      - 'stabilization/**'
-      - 'final_build/**'
-      - 'particle_build/**'
+      - 'pegdrop_source/**'
+      - 'stabilization/test_stabilization.py'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -18,16 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore current source
+      - name: Materialize canonical source
         run: |
-          mkdir -p final_build/src
-          tr -d '\r\n' < particle_build/source_exact.b64 > final_build/source.b64
-          base64 -d final_build/source.b64 > final_build/source.tgz
-          echo '770230156d2483b734845b8a9781f5ba6e2df812f000142f8a97497ef3bb6944  final_build/source.tgz' | sha256sum -c -
-          tar -xzf final_build/source.tgz -C final_build/src
-          python final_build/apply_final.py
+          chmod +x pegdrop_source/materialize_source.sh
+          pegdrop_source/materialize_source.sh "$GITHUB_WORKSPACE/pegdrop_build"
+          grep -q '#define ORANGE_TARGET 15' pegdrop_build/main.c
+          grep -q '#define PHYSICS_SUBSTEPS 1' pegdrop_build/main.c
+          grep -q '#define SHOT_FRAME_LIMIT 240' pegdrop_build/main.c
+          test "$(grep -c 'static void sfx_fire' pegdrop_build/main.c)" -eq 1
 
-      - name: Build hUGEDriver
+      - name: Install GBDK and build hUGEDriver
         run: |
           wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
           tar -xzf gbdk-linux64.tar.gz
@@ -38,75 +37,47 @@ jobs:
           make -C rgbds -j4 rgbasm rgblink rgbfix
           wget -q https://github.com/SuperDisk/hUGEDriver/archive/refs/heads/master.zip -O huge.zip
           unzip -q huge.zip
-          cp hUGEDriver-master/include/hUGEDriver.h final_build/src/
-          cp hUGEDriver-master/gbdk_example/src/sample_song.c final_build/src/
-          sed -i 's/{2, \&order_cnt, order1, order2, order3,order4,/{2, 2, 2, 2, 68, order1, order2, order3, order4,/' final_build/src/sample_song.c
           cd hUGEDriver-master
           "$GITHUB_WORKSPACE/rgbds/rgbasm" -DGBDK -o hUGEDriver.obj hUGEDriver.asm
           python tools/rgb2sdas.py -o hUGEDriver.o hUGEDriver.obj
           "$GITHUB_WORKSPACE/gbdk/bin/sdar" -ru hUGEDriver.lib hUGEDriver.o
           cd "$GITHUB_WORKSPACE"
-          cp hUGEDriver-master/hUGEDriver.lib final_build/src/
-
-      - name: Apply stabilization patches
-        working-directory: final_build/src
-        run: |
-          patch -p0 < ../../stabilization/stabilization.patch
-          patch -p0 < ../../stabilization/performance.patch
-          patch -p0 < ../../stabilization/performance2.patch
-          patch -p0 < ../../stabilization/performance3.patch
-          patch -p0 < ../../stabilization/performance4.patch
-          patch -p0 < ../../stabilization/diagnostic.patch
-          grep -q '#define ORANGE_TARGET 15' main.c
-          grep -q '#define PHYSICS_SUBSTEPS 1' main.c
-          grep -q '#define SHOT_FRAME_LIMIT 240' main.c
-          test "$(grep -c 'static void sfx_fire' main.c)" -eq 1
+          cp hUGEDriver-master/hUGEDriver.lib pegdrop_build/
 
       - name: Compile release and debug ROMs
-        working-directory: final_build/src
+        working-directory: pegdrop_build
         run: |
           make clean
           make LCC="$GITHUB_WORKSPACE/gbdk/bin/lcc"
           test -s pegdrop_deluxe.gb
           test -s pegdrop_deluxe_debug.gb
           sha256sum pegdrop_deluxe.gb pegdrop_deluxe_debug.gb | tee ROM_SHA256.txt
+          grep -q '^5a5b168f4defe359ba6bf6800865010b58e6802d73fc4fd7b0200c606b9f5054  pegdrop_deluxe.gb$' ROM_SHA256.txt
 
       - name: State-aware gameplay assertions
-        working-directory: final_build/src
+        working-directory: pegdrop_build
         run: |
           python -m pip install --disable-pip-version-check pyboy pillow
-          cp ../../stabilization/test_stabilization.py .
+          cp ../stabilization/test_stabilization.py .
           python test_stabilization.py
-
-      - name: Write stabilization report
-        working-directory: final_build/src
-        run: |
-          cat > STABILIZATION_NOTES.md <<'EOF'
-          Stabilization pass: 15 orange targets, retuned multipliers, one collision-safe
-          physics step at current launch speeds, nearest collision selection with 16-bit
-          broad phase, division-free reflection and separation, near-orange scanning removed
-          from the inner loop, adaptive particles, cached sprite visibility and positions,
-          stall handling, 240-update cap, channel-1 SFX ownership, and state-aware assertions
-          including a minimum 40-percent physics-to-VBlank throughput ratio.
-          EOF
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: pegdrop-stabilized-build
+          name: pegdrop-canonical-build
           path: |
-            final_build/src/pegdrop_deluxe.gb
-            final_build/src/pegdrop_deluxe_debug.gb
-            final_build/src/main.c
-            final_build/src/tiles.c
-            final_build/src/tiles.h
-            final_build/src/campaign_data.h
-            final_build/src/Makefile
-            final_build/src/hUGEDriver.h
-            final_build/src/hUGEDriver.lib
-            final_build/src/sample_song.c
-            final_build/src/ROM_SHA256.txt
-            final_build/src/PLAYTEST_RESULT.txt
-            final_build/src/STABILIZATION_NOTES.md
-            final_build/src/stabilized-*.png
-          if-no-files-found: warn
+            pegdrop_build/pegdrop_deluxe.gb
+            pegdrop_build/pegdrop_deluxe_debug.gb
+            pegdrop_build/main.c
+            pegdrop_build/tiles.c
+            pegdrop_build/tiles.h
+            pegdrop_build/campaign_data.h
+            pegdrop_build/Makefile
+            pegdrop_build/hUGEDriver.h
+            pegdrop_build/hUGEDriver.lib
+            pegdrop_build/sample_song.c
+            pegdrop_build/ROM_SHA256.txt
+            pegdrop_build/PLAYTEST_RESULT.txt
+            pegdrop_build/STABILIZATION_NOTES.md
+            pegdrop_build/stabilized-*.png
+          if-no-files-found: error
