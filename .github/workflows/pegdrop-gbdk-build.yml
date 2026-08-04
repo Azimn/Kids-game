@@ -1,94 +1,54 @@
-name: Peg Drop Real Input Playtest
+name: Peg Drop Final Repair Bridge
 
 on:
   push:
     branches: [pegdrop-gbdk-build]
-    paths: ['.github/workflows/pegdrop-gbdk-build.yml']
+    paths:
+      - '.github/workflows/pegdrop-gbdk-build.yml'
+      - '.github/workflows/pegdrop-build-final.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/pegdrop-gbdk-build.yml'
+      - '.github/workflows/pegdrop-build-final.yml'
   workflow_dispatch:
 
+permissions:
+  actions: write
+  contents: read
+
 jobs:
-  playtest:
+  dispatch-and-collect:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Restore verified source
+
+      - name: Dispatch final repaired build
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p playtest/src
-          cat pegdrop_build/chunk00.b64 pegdrop_build/chunk01.b64 pegdrop_build/chunk02.b64 pegdrop_build/c3_00.b64 pegdrop_build/c3_01.b64 pegdrop_build/c3_tail.b64 pegdrop_build/chunk04.b64 > playtest/source.b64
-          echo '766cf7b1e757b0684bc915a4a10cf9861f38d468f13d48f3596341131258ab66  playtest/source.b64' | sha256sum -c -
-          base64 --decode playtest/source.b64 > playtest/source.tgz
-          tar -xzf playtest/source.tgz -C playtest/src
-      - name: Compile release ROM
+          gh workflow run pegdrop-build-final.yml --ref pegdrop-gbdk-build
+          sleep 5
+          RUN_ID=$(gh run list --workflow pegdrop-build-final.yml --branch pegdrop-gbdk-build --limit 1 --json databaseId --jq '.[0].databaseId')
+          test -n "$RUN_ID"
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "Dispatched run $RUN_ID"
+
+      - name: Wait for compile and emulator test
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run watch "$RUN_ID" --exit-status
+
+      - name: Collect repaired ROM and source
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          wget -q https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
-          tar -xzf gbdk-linux64.tar.gz
-          cd playtest/src
-          make clean || true
-          make LCC="$GITHUB_WORKSPACE/gbdk/bin/lcc"
-          sha256sum pegdrop_deluxe.gb | tee rom-sha256.txt
-      - name: Write and run real-input playtest
-        working-directory: playtest/src
-        run: |
-          python -m pip install --disable-pip-version-check pyboy pillow numpy
-          mkdir -p emulator_test frames
-          cat > emulator_test/playtest.py <<'PY'
-          from pathlib import Path
-          import numpy as np
-          from pyboy import PyBoy
-          root=Path(__file__).resolve().parents[1]
-          pyboy=PyBoy(str(root/'pegdrop_deluxe.gb'),window='null',sound_emulated=False)
-          pyboy.set_emulation_speed(0)
-          def tick(n=1):
-              for _ in range(n): pyboy.tick()
-          def press(btn,n=2):
-              pyboy.button(btn); tick(n)
-          def img(name):
-              pyboy.screen.image.save(root/'frames'/f'{name}.png')
-              return np.array(pyboy.screen.ndarray)[:,:,:3].copy()
-          press('start',5); tick(10); press('a',5); tick(30); press('a',5); tick(30); press('a',5); tick(30)
-          start=img('00_start_board')
-          results=[]
-          for i,aim in enumerate([0,8,-12,16,-20,5],1):
-              btn='right' if aim>=0 else 'left'
-              for _ in range(abs(aim)): press(btn,1)
-              before=img(f'{i:02d}_before')
-              press('a',2); tick(4)
-              launched=img(f'{i:02d}_launched')
-              tick(40); moving=img(f'{i:02d}_moving')
-              launch_changed=not np.array_equal(before,launched)
-              moved=not np.array_equal(launched,moving)
-              tick(1100)
-              resolved=img(f'{i:02d}_resolved')
-              results.append((i,launch_changed,moved,not np.array_equal(moving,resolved)))
-          press('start',2); tick(20); paused1=img('90_paused'); tick(60); paused2=img('91_paused_later'); press('start',2); tick(10)
-          pause_static=np.array_equal(paused1,paused2)
-          ok=all(a and b for _,a,b,_ in results) and pause_static
-          report='PASS' if ok else 'FAIL'
-          (root/'PLAYTEST_RESULTS.txt').write_text(report+'\n'+repr(results)+'\npause_static='+repr(pause_static)+'\n')
-          pyboy.stop(save=False)
-          print(report,results,'pause_static',pause_static)
-          if not ok: raise SystemExit(1)
-          PY
-          python emulator_test/playtest.py
-          python - <<'PY'
-          from PIL import Image,ImageDraw
-          from pathlib import Path
-          files=sorted(Path('frames').glob('*.png'))
-          ims=[Image.open(f).convert('RGB') for f in files]
-          w,h=ims[0].size; cols=4; rows=(len(ims)+cols-1)//cols
-          out=Image.new('RGB',(cols*w,rows*(h+18)),'white'); d=ImageDraw.Draw(out)
-          for i,(im,f) in enumerate(zip(ims,files)):
-              x=(i%cols)*w; y=(i//cols)*(h+18); out.paste(im,(x,y)); d.text((x+2,y+h+2),f.stem,fill='black')
-          out.save('playtest-contact-sheet.png')
-          PY
+          mkdir -p collected
+          gh run download "$RUN_ID" --name pegdrop-final-repair --dir collected
+          find collected -maxdepth 3 -type f -print
+
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: pegdrop-real-input-playtest
-          path: |
-            playtest/src/pegdrop_deluxe.gb
-            playtest/src/rom-sha256.txt
-            playtest/src/PLAYTEST_RESULTS.txt
-            playtest/src/playtest-contact-sheet.png
-            playtest/src/frames/*.png
-            playtest/src/emulator_test/playtest.py
+          name: pegdrop-final-repair-collected
+          path: collected/**
+          if-no-files-found: error
