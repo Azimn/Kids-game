@@ -55,9 +55,11 @@ jobs:
           patch -p0 < ../../stabilization/performance.patch
           patch -p0 < ../../stabilization/performance2.patch
           patch -p0 < ../../stabilization/performance3.patch
+          patch -p0 < ../../stabilization/performance4.patch
           patch -p0 < ../../stabilization/diagnostic.patch
           grep -q '#define ORANGE_TARGET 15' main.c
           grep -q '#define PHYSICS_SUBSTEPS 1' main.c
+          grep -q '#define SHOT_FRAME_LIMIT 240' main.c
           test "$(grep -c 'static void sfx_fire' main.c)" -eq 1
 
       - name: Compile release and debug ROMs
@@ -83,8 +85,9 @@ jobs:
           Stabilization pass: 15 orange targets, retuned multipliers, one collision-safe
           physics step at current launch speeds, nearest collision selection with 16-bit
           broad phase, division-free reflection and separation, near-orange scanning removed
-          from the inner loop, adaptive particles, stall handling, 420-frame cap,
-          channel-1 SFX ownership, and versioned debug-state assertions.
+          from the inner loop, adaptive particles, cached sprite visibility and positions,
+          stall handling, 240-update cap, channel-1 SFX ownership, and state-aware assertions
+          including a minimum 40-percent physics-to-VBlank throughput ratio.
           EOF
 
       - uses: actions/upload-artifact@v4
